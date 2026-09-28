@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#1554a6">
+  <title>即時比分｜2026 學童盃中區預賽</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700;800;900&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="site-main">
+    <header class="page-hero">
+      <div class="page-hero-inner" data-reveal>
+        <span class="page-kicker">LIVE SCORES</span>
+        <h1>即時比分</h1>
+      </div>
+    </header>
+
+    <section class="page-content">
+      <div class="scores-shell">
+        <div class="scores-waiting" data-score-waiting data-reveal>
+          <div>
+            <div class="waiting-icon" aria-hidden="true">⚽</div>
+            <h2>等待大會公布</h2>
+            <p>即時比分資料將於大會公布後提供。</p>
+          </div>
+        </div>
+
+        <div data-score-app hidden>
+          <div class="score-toolbar">
+            <select class="score-select" data-score-select aria-label="選擇組別"></select>
+            <span class="score-updated" data-score-updated>更新中</span>
+          </div>
+          <div class="score-output" data-score-output></div>
+        </div>
+      </div>
+    </section>
+  </main>
+  <script src="toolbar.js"></script>
+  <script src="app.js"></script>
+  <script src="live-scores.js"></script>
+</body>
+</html>
