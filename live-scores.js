@@ -2,66 +2,119 @@
   "use strict";
 
   const SCORE_CONFIG = {
-    sheetId: "",
+    sheetId: "14591f624JfJuRYGFsku9bpVVHyor8Fxv",
     refreshMs: 30000,
     sources: [
-      { key: "g4-school-boys", label: "四年級｜學校男子組", gid: "", enabled: false },
-      { key: "g4-school-girls", label: "四年級｜學校女子組", gid: "", enabled: false },
-      { key: "g4-open-boys", label: "四年級｜公開男子組", gid: "", enabled: false },
-      { key: "g4-open-girls", label: "四年級｜公開女子組", gid: "", enabled: false },
-      { key: "g5-school-boys", label: "五年級｜學校男子組", gid: "", enabled: false },
-      { key: "g5-school-girls", label: "五年級｜學校女子組", gid: "", enabled: false },
-      { key: "g5-open-boys", label: "五年級｜公開男子組", gid: "", enabled: false },
-      { key: "g5-open-girls", label: "五年級｜公開女子組", gid: "", enabled: false },
-      { key: "g6-school-boys", label: "六年級｜學校男子組", gid: "", enabled: false },
-      { key: "g6-school-girls", label: "六年級｜學校女子組", gid: "", enabled: false },
-      { key: "g6-open-boys", label: "六年級｜公開男子組", gid: "", enabled: false },
-      { key: "g6-open-girls", label: "六年級｜公開女子組", gid: "", enabled: false }
+      { key: "school-4", category: "school", age: "4", categoryLabel: "學校組", ageLabel: "四年級", sheetName: "學校組四年級" },
+      { key: "school-5", category: "school", age: "5", categoryLabel: "學校組", ageLabel: "五年級", sheetName: "學校組五年級" },
+      { key: "school-6", category: "school", age: "6", categoryLabel: "學校組", ageLabel: "六年級", sheetName: "學校組六年級" },
+      { key: "open-4", category: "open", age: "4", categoryLabel: "公開組", ageLabel: "四年級", sheetName: "公開組四年級" },
+      { key: "open-5", category: "open", age: "5", categoryLabel: "公開組", ageLabel: "五年級", sheetName: "公開組五年級" },
+      { key: "open-6", category: "open", age: "6", categoryLabel: "公開組", ageLabel: "六年級", sheetName: "公開組六年級" }
     ]
   };
+
+  let requestSequence = 0;
 
   function ready(fn) {
     if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", fn, { once: true });
     else fn();
   }
 
-  function parseCSV(text) {
-    const rows = [];
-    let row = [];
-    let cell = "";
-    let quoted = false;
-
-    for (let i = 0; i < text.length; i += 1) {
-      const char = text[i];
-      const next = text[i + 1];
-
-      if (char === '"' && quoted && next === '"') {
-        cell += '"';
-        i += 1;
-      } else if (char === '"') {
-        quoted = !quoted;
-      } else if (char === "," && !quoted) {
-        row.push(cell);
-        cell = "";
-      } else if ((char === "\n" || char === "\r") && !quoted) {
-        if (char === "\r" && next === "\n") i += 1;
-        row.push(cell);
-        if (row.some((value) => value.trim() !== "")) rows.push(row);
-        row = [];
-        cell = "";
-      } else {
-        cell += char;
-      }
-    }
-
-    row.push(cell);
-    if (row.some((value) => value.trim() !== "")) rows.push(row);
-    return rows;
-  }
-
   function normalizeScore(value) {
     const score = (value || "").trim();
     return score ? score.replace(/\s+/g, "").replace(/[－—-]/g, ":").replace(/：/g, ":") : "VS";
+  }
+
+  function normalizeTime(value) {
+    const text = (value || "").trim();
+    const match = text.match(/^(\d{2})(\d{2})\s*[-–—]\s*(\d{2})(\d{2})$/);
+    if (!match) return text;
+    return match[1] + ":" + match[2] + "–" + match[3] + ":" + match[4];
+  }
+
+  function normalizeMatch(value) {
+    const text = (value || "").trim();
+    if (!text) return "";
+    return text.replace(/^\((\d+)\)$/, "$1");
+  }
+
+  function tableToRows(table) {
+    const cols = Array.isArray(table && table.cols) ? table.cols : [];
+    const body = Array.isArray(table && table.rows) ? table.rows : [];
+    const headers = cols.map((col) => (col && (col.label || col.id)) || "");
+
+    const rows = body.map((row) => {
+      const cells = Array.isArray(row && row.c) ? row.c : [];
+      return headers.map((_, index) => {
+        const cell = cells[index];
+        if (!cell || cell.v == null) return "";
+        if (cell.f != null && cell.f !== "") return String(cell.f);
+        return String(cell.v);
+      });
+    });
+
+    return [headers, ...rows];
+  }
+
+  function loadSheet(source) {
+    return new Promise((resolve, reject) => {
+      const callbackName = "__schoolboyScoreCallback" + (++requestSequence);
+      const script = document.createElement("script");
+      let settled = false;
+
+      function cleanup() {
+        if (script.parentNode) script.remove();
+        try {
+          delete window[callbackName];
+        } catch (_) {
+          window[callbackName] = undefined;
+        }
+      }
+
+      const timeout = window.setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(new Error("score request timeout"));
+      }, 12000);
+
+      window[callbackName] = (payload) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timeout);
+        cleanup();
+
+        if (!payload || payload.status !== "ok" || !payload.table) {
+          reject(new Error("invalid score response"));
+          return;
+        }
+
+        resolve(tableToRows(payload.table));
+      };
+
+      script.async = true;
+      script.onerror = () => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timeout);
+        cleanup();
+        reject(new Error("score script failed"));
+      };
+
+      const tqx = encodeURIComponent("out:json;responseHandler:" + callbackName);
+      script.src =
+        "https://docs.google.com/spreadsheets/d/" +
+        encodeURIComponent(SCORE_CONFIG.sheetId) +
+        "/gviz/tq?tqx=" +
+        tqx +
+        "&sheet=" +
+        encodeURIComponent(source.sheetName) +
+        "&t=" +
+        Date.now();
+
+      document.head.append(script);
+    });
   }
 
   function buildSchedule(rows) {
@@ -74,7 +127,7 @@
       return fragment;
     }
 
-    const dataRows = rows.slice(1).filter((cols) => cols.length >= 7 && cols.some((v) => v.trim()));
+    const dataRows = rows.slice(1).filter((cols) => cols.length >= 7 && cols.slice(0, 7).some((v) => v.trim()));
     if (!dataRows.length) {
       const empty = document.createElement("div");
       empty.className = "score-empty";
@@ -84,16 +137,23 @@
     }
 
     const groups = new Map();
+    let currentDate = "";
+
     dataRows.forEach((cols) => {
+      const rowDate = (cols[0] || "").trim();
+      if (rowDate) currentDate = rowDate;
+
       const item = {
-        date: (cols[0] || "").trim(),
-        match: (cols[1] || "").trim(),
-        time: (cols[2] || "").trim(),
-        field: (cols[3] || "").trim(),
+        date: currentDate,
+        time: normalizeTime(cols[1]),
+        field: (cols[2] || "").trim(),
+        match: normalizeMatch(cols[3]),
         teamA: (cols[4] || "").trim(),
         score: normalizeScore(cols[5]),
         teamB: (cols[6] || "").trim()
       };
+
+      if (!item.teamA && !item.teamB) return;
       if (!groups.has(item.date)) groups.set(item.date, []);
       groups.get(item.date).push(item);
     });
@@ -115,7 +175,11 @@
 
         const meta = document.createElement("div");
         meta.className = "score-meta";
-        meta.textContent = [match.time, match.field && "場地 " + match.field, match.match && "場次 " + match.match].filter(Boolean).join(" · ");
+        meta.textContent = [
+          match.match && "第 " + match.match + " 場",
+          match.time,
+          match.field && match.field + " 場"
+        ].filter(Boolean).join(" · ");
 
         const core = document.createElement("div");
         core.className = "score-core";
@@ -143,11 +207,7 @@
     const app = document.querySelector("[data-score-app]");
     if (!waiting || !app) return;
 
-    const enabledSources = SCORE_CONFIG.sources.filter((source) =>
-      source.enabled && source.gid && SCORE_CONFIG.sheetId
-    );
-
-    if (!enabledSources.length) {
+    if (!SCORE_CONFIG.sheetId || !SCORE_CONFIG.sources.length) {
       waiting.hidden = false;
       app.hidden = true;
       return;
@@ -156,49 +216,101 @@
     waiting.hidden = true;
     app.hidden = false;
 
-    const select = app.querySelector("[data-score-select]");
+    const categoryContainer = app.querySelector("[data-score-category]");
+    const ageContainer = app.querySelector("[data-score-age]");
+    const ageStep = app.querySelector("[data-score-age-step]");
     const output = app.querySelector("[data-score-output]");
+    const current = app.querySelector("[data-score-current]");
+    const stamp = app.querySelector("[data-score-updated]");
+    const categoryButtons = Array.from(categoryContainer.querySelectorAll("[data-category]"));
+    const ageButtons = Array.from(ageContainer.querySelectorAll("[data-age]"));
     let updating = false;
+    let activeRequestId = 0;
+    let selectedCategory = "";
+    let selectedAge = "";
 
-    enabledSources.forEach((source) => {
-      const option = document.createElement("option");
-      option.value = source.key;
-      option.textContent = source.label;
-      select.append(option);
-    });
+    function findSource() {
+      return SCORE_CONFIG.sources.find((source) =>
+        source.category === selectedCategory && source.age === selectedAge
+      );
+    }
 
-    async function refresh() {
-      if (updating) return;
-      const source = enabledSources.find((item) => item.key === select.value) || enabledSources[0];
+    function setActive(buttons, attribute, value) {
+      buttons.forEach((button) => {
+        const active = button.dataset[attribute] === value;
+        button.classList.toggle("active", active);
+        button.setAttribute("aria-pressed", String(active));
+      });
+    }
+
+    function showPrompt(text) {
+      const prompt = document.createElement("div");
+      prompt.className = "score-empty score-prompt";
+      prompt.textContent = text;
+      output.replaceChildren(prompt);
+    }
+
+    async function refresh(force) {
+      if (updating && !force) return;
+      const source = findSource();
       if (!source) return;
+      const requestId = ++activeRequestId;
       updating = true;
+      if (stamp) stamp.textContent = "更新中";
 
       try {
-        const url = "https://docs.google.com/spreadsheets/d/" +
-          encodeURIComponent(SCORE_CONFIG.sheetId) +
-          "/export?format=csv&gid=" + encodeURIComponent(source.gid);
-        const response = await fetch(url, { cache: "no-store" });
-        if (!response.ok) throw new Error("score fetch failed");
-        const text = await response.text();
-        const rows = parseCSV(text);
+        const rows = await loadSheet(source);
+        if (requestId !== activeRequestId) return;
         output.replaceChildren(buildSchedule(rows));
-        const stamp = app.querySelector("[data-score-updated]");
         if (stamp) stamp.textContent = "最後更新 " + new Date().toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" });
       } catch (error) {
-        if (!output.children.length) {
+        if (requestId !== activeRequestId) return;
+        if (!output.querySelector(".score-row")) {
           const fail = document.createElement("div");
           fail.className = "score-empty";
           fail.textContent = "即時比分暫時無法讀取，請稍後再試。";
           output.replaceChildren(fail);
         }
+        if (stamp) stamp.textContent = "更新失敗";
       } finally {
-        updating = false;
+        if (requestId === activeRequestId) updating = false;
       }
     }
 
-    select.addEventListener("change", refresh);
-    select.value = enabledSources[0].key;
-    refresh();
-    window.setInterval(refresh, SCORE_CONFIG.refreshMs);
+    categoryButtons.forEach((button) => {
+      button.setAttribute("aria-pressed", "false");
+      button.addEventListener("click", () => {
+        activeRequestId += 1;
+        updating = false;
+        selectedCategory = button.dataset.category;
+        selectedAge = "";
+        setActive(categoryButtons, "category", selectedCategory);
+        setActive(ageButtons, "age", selectedAge);
+        ageStep.hidden = false;
+        if (current) current.textContent = button.querySelector("span").textContent + " · 請選擇歲組";
+        if (stamp) stamp.textContent = "";
+        showPrompt("請選擇四年級、五年級或六年級。");
+        ageStep.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      });
+    });
+
+    ageButtons.forEach((button) => {
+      button.setAttribute("aria-pressed", "false");
+      button.addEventListener("click", () => {
+        if (!selectedCategory) return;
+        selectedAge = button.dataset.age;
+        setActive(ageButtons, "age", selectedAge);
+        const source = findSource();
+        if (!source) return;
+        if (current) current.textContent = source.categoryLabel + " · " + source.ageLabel;
+        refresh(true);
+      });
+    });
+
+    showPrompt("請先選擇學校組或公開組。");
+
+    window.setInterval(() => {
+      if (findSource()) refresh(false);
+    }, SCORE_CONFIG.refreshMs);
   });
 })();
