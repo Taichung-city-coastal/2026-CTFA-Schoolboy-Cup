@@ -22,8 +22,23 @@
   }
 
   function normalizeScore(value) {
-    const score = (value || "").trim();
-    return score ? score.replace(/\s+/g, "").replace(/[－—-]/g, ":").replace(/：/g, ":") : "VS";
+    const score = String(value == null ? "" : value).normalize("NFKC").trim();
+    return score
+      ? score.replace(/[：﹕∶]/g, ":")
+        .replace(/點球大戰|點球|十二碼|点球/g, "PK")
+        .replace(/p\s*\.?\s*k\.?/gi, "PK")
+        .replace(/\s+/g, "")
+        .replace(/[－—–-]/g, ":")
+      : "VS";
+  }
+
+  function splitScoreForDisplay(value) {
+    const score = normalizeScore(value);
+    const pkIndex = score.indexOf("PK");
+    if (pkIndex < 0) return { main: score, pk: "" };
+    const main = score.slice(0, pkIndex).replace(/[\s:：(（)）]+$/g, "") || "VS";
+    const pkScore = score.slice(pkIndex + 2).replace(/^[\s:：(（)）]+|[\s)）]+$/g, "");
+    return { main, pk: "PK" + (pkScore ? " " + pkScore : "") };
   }
 
   function normalizeTime(value) {
@@ -37,6 +52,32 @@
     const text = (value || "").trim();
     if (!text) return "";
     return text.replace(/^\((\d+)\)$/, "$1");
+  }
+
+  function displayTeamName(value) {
+    const name = String(value || "").trim();
+    const reference = /^(勝|敗)\s*[（(]?\s*(\d+)\s*[）)]?$/.exec(name);
+    return reference ? "(" + reference[2] + ")" + reference[1] : name;
+  }
+
+  function normalizeTeamSearch(value) {
+    return String(value || "").normalize("NFKC").toLowerCase()
+      .replace(/臺/g, "台")
+      .replace(/[\s\p{P}\p{S}]/gu, "");
+  }
+
+  function matchesTeamName(team, query) {
+    const name = normalizeTeamSearch(team);
+    if (!query) return true;
+    if (name.includes(query)) return true;
+    // 中文名稱、英文縮寫均可略過中間字元進行模糊比對。
+    let offset = 0;
+    for (const letter of query) {
+      offset = name.indexOf(letter, offset);
+      if (offset < 0) return false;
+      offset += letter.length;
+    }
+    return true;
   }
 
   function tableToRows(table) {
@@ -117,14 +158,16 @@
     });
   }
 
-  function buildSchedule(rows) {
+  function buildSchedule(rows, searchText) {
     const fragment = document.createDocumentFragment();
+    const search = normalizeTeamSearch(searchText);
+    const summary = { total: 0, matched: 0 };
     if (rows.length < 2) {
       const empty = document.createElement("div");
       empty.className = "score-empty";
       empty.textContent = "尚無最新賽程。";
       fragment.append(empty);
-      return fragment;
+      return { fragment, summary };
     }
 
     const dataRows = rows.slice(1).filter((cols) => cols.length >= 7 && cols.slice(0, 7).some((v) => v.trim()));
@@ -133,7 +176,7 @@
       empty.className = "score-empty";
       empty.textContent = "尚無最新賽程。";
       fragment.append(empty);
-      return fragment;
+      return { fragment, summary };
     }
 
     const groups = new Map();
@@ -148,12 +191,15 @@
         time: normalizeTime(cols[1]),
         field: (cols[2] || "").trim(),
         match: normalizeMatch(cols[3]),
-        teamA: (cols[4] || "").trim(),
+        teamA: displayTeamName(cols[4]),
         score: normalizeScore(cols[5]),
-        teamB: (cols[6] || "").trim()
+        teamB: displayTeamName(cols[6])
       };
 
       if (!item.teamA && !item.teamB) return;
+      summary.total += 1;
+      if (search && !matchesTeamName(item.teamA, search) && !matchesTeamName(item.teamB, search)) return;
+      summary.matched += 1;
       if (!groups.has(item.date)) groups.set(item.date, []);
       groups.get(item.date).push(item);
     });
@@ -189,10 +235,20 @@
         const core = document.createElement("div");
         core.className = "score-core";
         const teamA = document.createElement("strong");
-        const score = document.createElement("b");
+        const score = document.createElement("div");
+        score.className = "score-value";
         const teamB = document.createElement("strong");
         teamA.textContent = match.teamA || "待定";
-        score.textContent = match.score;
+        const scoreParts = splitScoreForDisplay(match.score);
+        const primaryScore = document.createElement("b");
+        primaryScore.textContent = scoreParts.main;
+        score.append(primaryScore);
+        if (scoreParts.pk) {
+          const pkScore = document.createElement("span");
+          pkScore.className = "score-pk";
+          pkScore.textContent = scoreParts.pk;
+          score.append(pkScore);
+        }
         teamB.textContent = match.teamB || "待定";
         core.append(teamA, score, teamB);
 
@@ -204,7 +260,13 @@
       fragment.append(day);
     });
 
-    return fragment;
+    if (!summary.matched && search) {
+      const empty = document.createElement("div");
+      empty.className = "score-empty score-search-empty";
+      empty.textContent = "找不到符合隊伍名稱的賽程，請試試其他關鍵字。";
+      fragment.append(empty);
+    }
+    return { fragment, summary };
   }
 
   ready(() => {
@@ -225,6 +287,9 @@
     const ageContainer = app.querySelector("[data-score-age]");
     const ageStep = app.querySelector("[data-score-age-step]");
     const output = app.querySelector("[data-score-output]");
+    const searchWrap = app.querySelector("[data-score-search-wrap]");
+    const searchInput = app.querySelector("[data-score-search]");
+    const searchCount = app.querySelector("[data-score-search-count]");
     const current = app.querySelector("[data-score-current]");
     const stamp = app.querySelector("[data-score-updated]");
     const categoryButtons = Array.from(categoryContainer.querySelectorAll("[data-category]"));
@@ -233,6 +298,25 @@
     let activeRequestId = 0;
     let selectedCategory = "";
     let selectedAge = "";
+    let latestRows = null;
+
+    function renderSchedule() {
+      if (!latestRows) return;
+      const { fragment, summary } = buildSchedule(latestRows, searchInput.value);
+      output.replaceChildren(fragment);
+      searchCount.textContent = searchInput.value.trim()
+        ? "找到 " + summary.matched + " 場符合的比賽"
+        : "共 " + summary.total + " 場比賽";
+    }
+
+    function resetSearch() {
+      latestRows = null;
+      searchInput.value = "";
+      searchCount.textContent = "";
+      searchWrap.hidden = true;
+    }
+
+    searchInput.addEventListener("input", renderSchedule);
 
     function findSource() {
       return SCORE_CONFIG.sources.find((source) =>
@@ -266,7 +350,11 @@
       try {
         const rows = await loadSheet(source);
         if (requestId !== activeRequestId) return;
-        output.replaceChildren(buildSchedule(rows));
+        latestRows = rows;
+        renderSchedule();
+        document.dispatchEvent(new CustomEvent("schoolboy:scores-updated", {
+          detail: { key: source.key, rows: rows }
+        }));
         if (stamp) stamp.textContent = "最後更新 " + new Date().toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" });
       } catch (error) {
         if (requestId !== activeRequestId) return;
@@ -289,6 +377,7 @@
         updating = false;
         selectedCategory = button.dataset.category;
         selectedAge = "";
+        resetSearch();
         setActive(categoryButtons, "category", selectedCategory);
         setActive(ageButtons, "age", selectedAge);
         ageStep.hidden = false;
@@ -304,10 +393,13 @@
       button.addEventListener("click", () => {
         if (!selectedCategory) return;
         selectedAge = button.dataset.age;
+        resetSearch();
         setActive(ageButtons, "age", selectedAge);
         const source = findSource();
         if (!source) return;
+        searchWrap.hidden = false;
         if (current) current.textContent = source.categoryLabel + " · " + source.ageLabel;
+        showPrompt("賽程載入中...");
         refresh(true);
       });
     });

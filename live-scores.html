@@ -74,6 +74,18 @@
               </div>
             </div>
           </div>
+          <div class="score-draws" data-score-draws hidden></div>
+          <div class="score-search" data-score-search-wrap hidden>
+            <label class="score-search-label" for="score-team-search">搜尋隊伍</label>
+            <div class="score-search-control">
+              <svg aria-hidden="true" viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                <circle cx="11" cy="11" r="7"></circle>
+                <path d="m20 20-4-4"></path>
+              </svg>
+              <input id="score-team-search" type="search" data-score-search placeholder="輸入隊伍名稱，快速尋找比賽" autocomplete="off" spellcheck="false">
+            </div>
+            <span class="score-search-count" data-score-search-count aria-live="polite"></span>
+          </div>
           <div class="score-output" data-score-output></div>
         </div>
       </div>
@@ -82,5 +94,6 @@
   <script src="toolbar.js"></script>
   <script src="app.js"></script>
   <script src="live-scores.js"></script>
+  <script src="live-draws.js"></script>
 </body>
 </html>
