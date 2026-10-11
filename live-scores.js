@@ -175,11 +175,16 @@
 
         const meta = document.createElement("div");
         meta.className = "score-meta";
-        meta.textContent = [
-          match.match && "第 " + match.match + " 場",
-          match.time,
-          match.field && match.field + " 場"
-        ].filter(Boolean).join(" · ");
+        const matchNumber = document.createElement("span");
+        matchNumber.className = "score-meta-match";
+        matchNumber.textContent = match.match ? "第 " + match.match + " 場" : "場次待定";
+        const matchTime = document.createElement("span");
+        matchTime.className = "score-meta-time";
+        matchTime.textContent = match.time || "時間待定";
+        const matchField = document.createElement("span");
+        matchField.className = "score-meta-field";
+        matchField.textContent = match.field ? "場地 " + match.field : "場地待定";
+        meta.append(matchNumber, matchTime, matchField);
 
         const core = document.createElement("div");
         core.className = "score-core";
