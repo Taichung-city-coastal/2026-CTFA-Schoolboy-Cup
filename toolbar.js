@@ -5,6 +5,7 @@
     ["index.html", "首頁", "index"],
     ["announcements.html", "大會公告", "announcements"],
     ["event-info.html", "賽事資訊", "event"],
+    ["2026全國學童盃足球錦標賽競賽規程草案V5.pdf", "競賽章程", "regulations", "pdf"],
     ["live-scores.html", "即時比分", "scores"],
     ["venue-map.html", "比賽場地", "venue"],
     ["partners.html", "相關單位", "partners"]
@@ -16,9 +17,10 @@
 
   function render() {
     const page = currentPage();
-    const navLinks = pages.map(([href, label, key]) => {
+    const navLinks = pages.map(([href, label, key, type]) => {
       const active = page === href || (page === "" && href === "index.html");
-      return '<a class="nav-link' + (active ? ' active' : '') + '" href="' + href + '" data-nav="' + key + '">' + label + '</a>';
+      const pdfAttrs = type === "pdf" ? ' target="_blank" rel="noopener noreferrer" type="application/pdf"' : "";
+      return '<a class="nav-link' + (active ? ' active' : '') + '" href="' + href + '" data-nav="' + key + '"' + pdfAttrs + '>' + label + '</a>';
     }).join("");
 
     const header = document.createElement("header");

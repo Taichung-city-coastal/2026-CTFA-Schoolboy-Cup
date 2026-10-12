@@ -104,8 +104,7 @@
     }
   };
 
-  // 對應 PDF 各小組的小組賽場次；只有全部賽事都有比分且積分名次無同分時，
-  // 才自動將 A1 / A2 等資格代號換成隊伍名稱，避免擅自判定同分名次。
+  // 對應 PDF 各小組的小組賽場次；全組完成後依積分與同分規則判定 A1 / A2。
   const GROUP_GAME_IDS = {
     "school-4": [[1, 8, 15], [2, 9, 16], [3, 10, 17], [4, 5, 11, 12, 18, 19], [6, 7, 13, 14, 20, 21]],
     "school-5": [[1, 4, 7], [2, 5, 8], [3, 6, 9]],
@@ -115,6 +114,11 @@
     "open-6": [[1, 6, 11], [2, 7, 12], [3, 8, 13], [4, 5, 9, 10, 14, 15]]
   };
 
+  // 預留公平競賽積分的權威資料（第六排序條件）。
+  // 格式：FAIR_PLAY_POINTS["school-4"]["A"]["正式隊名"] = 分數；
+  // 目前試算表未提供這個欄位，因此不得自行填入或臆測。
+  const FAIR_PLAY_POINTS = {};
+
   function element(tag, className, text) {
     const node = document.createElement(tag);
     if (className) node.className = className;
@@ -122,10 +126,46 @@
     return node;
   }
 
-  function groupCard(group) {
+  function chineseMatchNo(number) {
+    const digits = ["", "一", "二", "三", "四", "五", "六", "七", "八", "九"];
+    if (number < 10) return digits[number] || String(number);
+    if (number < 20) return "十" + (digits[number % 10] || "");
+    if (number < 100) return digits[Math.floor(number / 10)] + "十" + (digits[number % 10] || "");
+    return String(number);
+  }
+
+  function svgText(svg, x, y, className, content) {
+    const node = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    node.setAttribute("x", String(x));
+    node.setAttribute("y", String(y));
+    node.setAttribute("class", className);
+    node.textContent = content;
+    svg.append(node);
+  }
+
+  // 每條線依序記錄 PDF 的對戰隊伍，以及場次與兩端各自比分的位置。
+  // scores[0] 一定靠近 teams[0]、scores[1] 一定靠近 teams[1]。
+  const GROUP_EDGES = {
+    3: [
+      { teams: [0, 1], label: [38, 71], scores: [[76, 38], [38, 114]] },
+      { teams: [0, 2], label: [164, 71], scores: [[124, 38], [162, 114]] },
+      { teams: [1, 2], label: [100, 152], scores: [[55, 132], [145, 132]] }
+    ],
+    4: [
+      { teams: [0, 1], label: [100, 9], scores: [[77, 26], [123, 26]] },
+      { teams: [2, 3], label: [100, 152], scores: [[77, 120], [123, 120]] },
+      { teams: [0, 2], label: [13, 78], scores: [[24, 39], [24, 115]] },
+      { teams: [1, 3], label: [188, 78], scores: [[176, 39], [176, 115]] },
+      { teams: [0, 3], label: [73, 62], scores: [[52, 33], [150, 112]] },
+      { teams: [1, 2], label: [128, 62], scores: [[148, 33], [50, 112]] }
+    ]
+  };
+
+  function groupCard(group, gameIds, groupIndex) {
     const [letter, ...teams] = group;
     const card = element("article", "draw-group-card");
     card.setAttribute("aria-label", letter + " 組，" + teams.join("、"));
+    card.dataset.groupIndex = String(groupIndex);
     const title = element("h4", "draw-group-name", letter + " 組");
     title.append(element("small", "", teams.length + " 隊"));
     const figure = element("div", "draw-group-figure draw-group-figure--" + teams.length);
@@ -151,21 +191,49 @@
         svg.append(line);
       });
     }
+    const edges = GROUP_EDGES[teams.length];
+    (gameIds || []).forEach((game, i) => {
+      const edge = edges?.[i];
+      if (!edge) return;
+      const [x, y] = edge.label;
+      const marker = document.createElementNS("http://www.w3.org/2000/svg", "g");
+      marker.setAttribute("data-group-game", String(game));
+      svgText(marker, x, y - 3, "draw-group-match-no", "(" + chineseMatchNo(game) + ")");
+      edge.scores.forEach(([sx, sy], side) => {
+        const branch = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        branch.setAttribute("data-score-side", String(side));
+        svgText(branch, sx, sy, "draw-group-match-score", "");
+        svgText(branch, sx, sy + 12, "draw-group-match-pk", "");
+        marker.append(branch);
+      });
+      svg.append(marker);
+    });
+    svgText(svg, 100, teams.length === 3 ? 103 : 113, "draw-group-center-letter", letter);
     figure.append(svg);
     const spots = teams.length === 3 ? ["top", "bottom-left", "bottom-right"] : ["top-left", "top-right", "bottom-left", "bottom-right"];
     teams.forEach((team, i) => {
-      figure.append(element("span", "draw-group-team draw-group-team--" + spots[i], team));
+      const item = element("span", "draw-group-team draw-group-team--" + spots[i]);
+      const rankBadge = element("span", "draw-group-team-rank");
+      rankBadge.hidden = true;
+      item.append(
+        element("span", "draw-group-team-name", team),
+        element("span", "draw-group-team-points", "0 分"),
+        rankBadge
+      );
+      item.dataset.group = letter;
+      item.dataset.teamIndex = String(i);
+      figure.append(item);
     });
     card.append(title, figure);
     return card;
   }
 
-  function groupSection(label, groups, note) {
+  function groupSection(label, groups, note, idsByGroup) {
     const section = element("section", "draw-groups-section");
     section.append(element("h3", "draw-group-section-title", label));
     if (note) section.append(element("p", "draw-section-note", note));
     const grid = element("div", "draw-group-grid");
-    groups.forEach((group) => grid.append(groupCard(group)));
+    groups.forEach((group, i) => grid.append(groupCard(group, idsByGroup && idsByGroup[i], i)));
     section.append(grid);
     return section;
   }
@@ -194,6 +262,8 @@
       : (home === away ? null : (home > away ? 0 : 1));
     return {
       label: home + ":" + away + (hasPk ? " PK " + pkHome + ":" + pkAway : ""),
+      goals: [home, away],
+      penalties: hasPk ? [pkHome, pkAway] : null,
       winnerSide,
       isFinal: winnerSide !== null
     };
@@ -232,42 +302,207 @@
     return match ? "(" + match[2] + ")" + match[1] : text;
   }
 
-  function groupRanks(key, draw, results) {
-    const standings = new Map();
-    const idsByGroup = GROUP_GAME_IDS[key] || [];
+  function teamKey(value) {
+    return String(value || "").normalize("NFKC").toLowerCase()
+      .replace(/臺/g, "台")
+      .replace(/台中市山海屯運動協會/g, "山海屯")
+      .replace(/國民小學/g, "國小")
+      .replace(/[\s\p{P}\p{S}]/gu, "");
+  }
+
+  function teamSlot(draw, groupIndex, value) {
+    const raw = String(value || "").normalize("NFKC").trim();
+    const teams = draw.groups[groupIndex].slice(1);
+    if (/^\d+$/.test(raw)) {
+      const firstNumber = draw.groups.slice(0, groupIndex)
+        .reduce((sum, group) => sum + group.length - 1, 1);
+      const position = Number(raw) - firstNumber;
+      return position >= 0 && position < teams.length ? position : -1;
+    }
+    const key = teamKey(raw);
+    if (!key) return -1;
+    const exact = teams.map(teamKey).map((name, i) => name === key ? i : -1).filter((i) => i !== -1);
+    if (exact.length === 1) return exact[0];
+    // 名稱略有出入時只能採用組內唯一的完整子字串，防止模糊搜尋誤記比分。
+    if (key.length < 4) return -1;
+    const aliases = teams.map(teamKey).map((name, i) =>
+      name.includes(key) || key.includes(name) ? i : -1
+    ).filter((i) => i !== -1);
+    return aliases.length === 1 ? aliases[0] : -1;
+  }
+
+  function groupStats(key, draw, results) {
+    const stats = new Map();
     draw.groups.forEach((group, groupIndex) => {
-      const expectedTeams = group.length - 1;
-      const matchIds = idsByGroup[groupIndex] || [];
-      if (matchIds.length !== expectedTeams * (expectedTeams - 1) / 2) return;
-      const scores = new Map();
-      const played = new Set();
-      for (const id of matchIds) {
-        const game = results.get(id);
-        if (!game || !game.result) return;
-        const [first, second] = game.teams.map(usableName);
-        if (!first || !second) return;
-        const names = [first, second];
-        const keys = names.map((name) => name.normalize("NFKC").replace(/臺/g, "台").replace(/\s+/g, "").toLowerCase());
-        if (keys[0] === keys[1]) return;
-        const pair = keys.slice().sort().join("|");
-        if (played.has(pair)) return;
-        played.add(pair);
-        const numbers = game.result.label.match(/^(\d+):(\d+)/);
-        if (!numbers) return;
-        const goals = [Number(numbers[1]), Number(numbers[2])];
-        keys.forEach((team, side) => {
-          if (!scores.has(team)) scores.set(team, { name: names[side], points: 0, games: 0 });
-          const entry = scores.get(team);
-          entry.games += 1;
-          entry.points += goals[side] > goals[1 - side] ? 3 : goals[side] === goals[1 - side] ? 1 : 0;
+      const entries = group.slice(1).map((name) => ({
+        name, points: 0, played: 0, goalsFor: 0, goalsAgainst: 0
+      }));
+      const games = GROUP_GAME_IDS[key]?.[groupIndex] || [];
+      for (const id of games) {
+        const info = results.get(id);
+        if (!info?.result) continue;
+        const positions = info.teams.map((name) => teamSlot(draw, groupIndex, name));
+        if (positions.some((i) => i < 0) || positions[0] === positions[1]) continue;
+        const [home, away] = info.result.goals;
+        const outcome = home === away ? [1, 1] : home > away ? [3, 0] : [0, 3];
+        positions.forEach((position, side) => {
+          entries[position].points += outcome[side];
+          entries[position].played += 1;
+          entries[position].goalsFor += side === 0 ? home : away;
+          entries[position].goalsAgainst += side === 0 ? away : home;
         });
       }
-      if (scores.size !== expectedTeams || [...scores.values()].some((entry) => entry.games !== expectedTeams - 1)) return;
-      const ranking = [...scores.values()].sort((a, b) => b.points - a.points);
-      if (ranking.some((entry, i) => i > 0 && entry.points === ranking[i - 1].points)) return;
-      ranking.forEach((entry, i) => standings.set(group[0] + (i + 1), entry.name));
+      stats.set(group[0], entries);
     });
-    return standings;
+    return stats;
+  }
+
+  function rankTiedTeams(indices, games, entries, key, letter, criterion = 0) {
+    if (indices.length === 1) return [{ indices }];
+
+    const involved = new Set(indices);
+    const headToHead = new Map(indices.map((index) => [
+      index, { points: 0, goalsFor: 0, goalsAgainst: 0 }
+    ]));
+    games.forEach(({ sides, goals }) => {
+      if (!involved.has(sides[0]) || !involved.has(sides[1])) return;
+      const first = headToHead.get(sides[0]);
+      const second = headToHead.get(sides[1]);
+      first.goalsFor += goals[0];
+      first.goalsAgainst += goals[1];
+      second.goalsFor += goals[1];
+      second.goalsAgainst += goals[0];
+      if (goals[0] === goals[1]) {
+        first.points += 1;
+        second.points += 1;
+      } else {
+        (goals[0] > goals[1] ? first : second).points += 3;
+      }
+    });
+
+    function metric(index) {
+      const related = headToHead.get(index);
+      const full = entries[index];
+      switch (criterion) {
+        case 0: return related.points;                           // 1. 相關隊伍勝負關係
+        case 1: return related.goalsFor - related.goalsAgainst;  // 2. 相關淨勝球
+        case 2: return related.goalsFor;                         // 3. 相關進球數
+        case 3: return full.goalsFor - full.goalsAgainst;        // 4. 全組淨勝球
+        case 4: return full.goalsFor;                            // 5. 全組進球數
+        case 5: return FAIR_PLAY_POINTS[key]?.[letter]?.[full.name]; // 6. 公平競賽積分
+        default: return null;
+      }
+    }
+    if (criterion > 5) return [{ indices, reason: "同分待確認" }];
+    const scores = indices.map((index) => ({ index, value: metric(index) }));
+    if (scores.some(({ value }) => typeof value !== "number" || !Number.isFinite(value))) {
+      return [{ indices, reason: criterion === 5 ? "公平競賽積分待確認" : "同分待確認" }];
+    }
+    const values = [...new Set(scores.map(({ value }) => value))].sort((a, b) => b - a);
+    if (values.length === 1) return rankTiedTeams(indices, games, entries, key, letter, criterion + 1);
+
+    // 一旦部分隊伍已分出高低，剩下同分隊伍重新比較彼此直接對戰紀錄。
+    return values.flatMap((value) => {
+      const tied = scores.filter((score) => score.value === value).map((score) => score.index);
+      return rankTiedTeams(tied, games, entries, key, letter, 0);
+    });
+  }
+
+  function completedGroupRanks(key, draw, results, groupIndex, entries) {
+    const group = draw.groups[groupIndex];
+    const gameIds = GROUP_GAME_IDS[key]?.[groupIndex] || [];
+    const teamCount = group.length - 1;
+    // 必須確定每兩隊都實際交手一次，避免缺漏或重複場次造成錯誤排名。
+    if (gameIds.length !== teamCount * (teamCount - 1) / 2) return null;
+    const pairs = new Set();
+    const games = [];
+    for (const id of gameIds) {
+      const game = results.get(id);
+      if (!game?.result) return null;
+      const sides = game.teams.map((team) => teamSlot(draw, groupIndex, team));
+      if (sides.some((side) => side < 0) || sides[0] === sides[1]) return null;
+      const pair = sides.slice().sort((a, b) => a - b).join("-");
+      if (pairs.has(pair)) return null;
+      pairs.add(pair);
+      games.push({ sides, goals: game.result.goals });
+    }
+    if (pairs.size !== gameIds.length ||
+      entries.some((entry) => entry.played !== teamCount - 1)) return null;
+    const indices = entries.map((_, index) => index);
+    const pointValues = [...new Set(entries.map((entry) => entry.points))].sort((a, b) => b - a);
+    const places = pointValues.flatMap((points) => {
+      const tied = indices.filter((index) => entries[index].points === points);
+      return rankTiedTeams(tied, games, entries, key, group[0]);
+    });
+    // 第一名、第二名皆須獨立且唯一；第三、四名仍同分不影響前二名。
+    if (places[0]?.indices.length !== 1 || places[1]?.indices.length !== 1) {
+      const unresolved = places.find((place) => place.indices.length > 1);
+      return { ranking: null, reason: unresolved?.reason || "同分待確認" };
+    }
+    const ordered = places.flatMap((place) =>
+      place.indices.map((index) => ({ ...entries[index], index }))
+    );
+    return { ranking: ordered };
+  }
+
+  function groupRanks(key, draw, results) {
+    const ranks = new Map();
+    const stats = groupStats(key, draw, results);
+    draw.groups.forEach((group, index) => {
+      const entries = stats.get(group[0]);
+      const completed = entries && completedGroupRanks(key, draw, results, index, entries);
+      if (!completed?.ranking) return;
+      completed.ranking.slice(0, 2).forEach((entry, position) => {
+        ranks.set(group[0] + (position + 1), entry.name);
+      });
+    });
+    return ranks;
+  }
+
+  function normalizedSeed(label) {
+    const text = String(label || "").normalize("NFKC").trim().replace(/[()\s]/g, "");
+    const prior = /^(勝|敗)(\d+)$/.exec(text) || /^(\d+)(勝|敗)$/.exec(text);
+    if (prior) return /^\d/.test(text) ? prior[2] + prior[1] : prior[1] + prior[2];
+    return text.toUpperCase();
+  }
+
+  function groupCandidates(draw, seed, matchDefinitions, seen = new Set()) {
+    if (/^[A-G][1-4]$/.test(seed)) return new Set([seed[0]]);
+    const ref = seedReference(seed);
+    if (!ref || seen.has(ref.match)) return new Set();
+    seen.add(ref.match);
+    const match = matchDefinitions.get(ref.match);
+    if (!match) return new Set();
+    return new Set(match.seeds.flatMap((item) =>
+      [...groupCandidates(draw, item, matchDefinitions, new Set(seen))]
+    ));
+  }
+
+  function sheetSideMapping(draw, match, names, sheetTeams, matchDefinitions) {
+    const entered = sheetTeams.map(usableName);
+    if (entered.some((text) => !text) || teamKey(entered[0]) === teamKey(entered[1])) return null;
+    const groups = entered.map((text) => new Set(draw.groups.filter((group, index) =>
+      teamSlot(draw, index, text) >= 0
+    ).map((group) => group[0])));
+    function pairingScore(side, sheetSide) {
+      const enteredName = entered[sheetSide];
+      const seed = match.seeds[side];
+      const exactSeed = normalizedSeed(enteredName) === normalizedSeed(seed);
+      const seedCode = /^(?:[A-G][1-4]|(?:勝|敗)\d+|\d+(?:勝|敗))$/.test(normalizedSeed(enteredName));
+      if (seedCode) return exactSeed ? 10 : -100;
+      if (teamKey(enteredName) === teamKey(names[side])) return 10;
+      const possible = groupCandidates(draw, seed, matchDefinitions);
+      if (groups[sheetSide].size && possible.size) {
+        const overlap = [...groups[sheetSide]].some((group) => possible.has(group));
+        return overlap ? 3 : -100;
+      }
+      return 0;
+    }
+    const forward = pairingScore(0, 0) + pairingScore(1, 1);
+    const reverse = pairingScore(0, 1) + pairingScore(1, 0);
+    if (forward > reverse && forward > 0) return [0, 1];
+    if (reverse > forward && reverse > 0) return [1, 0];
+    return null;
   }
 
   function resolveBracket(draw, rows, key) {
@@ -282,7 +517,7 @@
       if (cache.has(number)) return cache.get(number);
       const match = matches.get(number);
       if (!match) return null;
-      const names = match.seeds.map((seed, index) => {
+      const names = match.seeds.map((seed) => {
         const ref = seedReference(seed);
         let name = ranks.get(seed) || seed;
         if (ref) {
@@ -291,18 +526,24 @@
             name = ref.outcome === "勝" ? previous.winner : previous.loser;
           }
         }
-        const sheetName = match.info && usableName(match.info.teams[index]);
-        const sheetPlaceholder = sheetName && (/^[A-G][12]$/.test(sheetName)
-          || /^[（(]?\d+[）)]?\s*[勝敗]$/.test(sheetName)
-          || /^[勝敗]\s*[（(]?\d+[）)]?$/.test(sheetName));
-        return sheetName && !sheetPlaceholder ? sheetName : name;
+        return name;
       });
+      const sourceSides = match.info && sheetSideMapping(draw, match, names, match.info.teams, matches);
+      if (sourceSides) {
+        sourceSides.forEach((sheetSide, side) => {
+          const actual = match.info.teams[sheetSide];
+          const placeholder = /^(?:[A-G][1-4]|(?:勝|敗)\s*\d+|\(\d+\)(?:勝|敗))$/i.test(normalizedSeed(actual));
+          if (!placeholder) names[side] = actual;
+        });
+      }
       const result = match.info && match.info.result;
-      const winnerSide = result ? result.winnerSide : null;
+      const winnerSide = result && sourceSides && result.winnerSide !== null
+        ? sourceSides.indexOf(result.winnerSide) : null;
       const state = {
         ...match,
         names,
         result,
+        sourceSides,
         winnerSide,
         winner: winnerSide == null ? "" : names[winnerSide],
         loser: winnerSide == null ? "" : names[1 - winnerSide]
@@ -315,138 +556,92 @@
   }
 
   function bracketLayout(draw) {
-    const stages = draw.rounds.map((round) => round.matches.map(([number]) => number));
-    const largest = Math.max(...stages.slice(0, -1).map((stage) => stage.length));
-    const peak = stages.findIndex((stage) => stage.length === largest);
-    const width = Math.max(940, largest * 240);
-    // PDF 的淘汰賽樹由下往上晉級：首輪在最下層，冠軍戰在最上層。
-    const rowHeight = 220;
-    const cardHeight = 128;
-    const cardTop = (row) => 60 + rowHeight * (stages.length - 1 - row);
+    const stages = draw.rounds;
+    const all = new Map();
+    stages.forEach((round, index) => round.matches.forEach((match) =>
+      all.set(match[0], { number: match[0], seeds: match.slice(1, 3), roundIndex: index, kind: match[3] || "" })
+    ));
+    const final = [...all.values()].find((match) => match.kind === "冠軍戰");
+    const bronze = [...all.values()].find((match) => match.kind === "季軍戰");
+    const leaves = [];
     const positions = new Map();
-    const anchors = stages[peak];
-    anchors.forEach((no, i) => positions.set(no, { x: width * (i + 0.5) / anchors.length, y: cardTop(peak) }));
-
-    function referencesTarget(targetNumber, sourceNumber) {
-      const target = draw.rounds.flatMap((round) => round.matches)
-        .find(([number]) => number === targetNumber);
-      return !!target && target.slice(1, 3).some((label) => {
+    const built = new Map();
+    function expandMatch(number) {
+      if (built.has(number)) return built.get(number);
+      const match = all.get(number);
+      if (!match) return null;
+      const node = { type: "match", ...match, children: [] };
+      built.set(number, node);
+      node.children = match.seeds.map((label, side) => {
         const ref = seedReference(label);
-        return ref && ref.match === sourceNumber;
+        if (ref && ref.outcome === "勝" && all.has(ref.match)) return expandMatch(ref.match);
+        const leaf = { type: "seed", label, number, side };
+        leaves.push(leaf);
+        return leaf;
       });
+      return node;
     }
-
-    for (let i = peak + 1; i < stages.length; i += 1) {
-      stages[i].forEach((no, index) => {
-        const previous = stages.slice(0, i).flat();
-        const inputs = previous.filter((source) => referencesTarget(no, source) && positions.has(source));
-        const x = inputs.length
-          ? inputs.reduce((total, source) => total + positions.get(source).x, 0) / inputs.length
-          : width * (index + 0.5) / stages[i].length;
-        positions.set(no, { x, y: cardTop(i) });
-      });
-    }
-
-    for (let i = peak - 1; i >= 0; i -= 1) {
-      stages[i].forEach((no, index) => {
-        const destinations = stages[i + 1].filter((target) => referencesTarget(target, no));
-        const parentX = destinations.length ? positions.get(destinations[0]).x : width * (index + 0.5) / stages[i].length;
-        const neighbors = stages[i].filter((other) =>
-          destinations.some((target) => referencesTarget(target, other))
-        );
-        const rank = neighbors.indexOf(no);
-        const x = parentX + (rank - (neighbors.length - 1) / 2) * 235;
-        positions.set(no, { x: Math.max(110, Math.min(width - 110, x)), y: cardTop(i) });
-      });
-    }
-
-    const last = draw.rounds[draw.rounds.length - 1];
-    const final = last.matches.find((match) => match[3] === "冠軍戰");
-    const third = last.matches.find((match) => match[3] === "季軍戰");
-    if (final && third) {
-      positions.set(final[0], { x: width * 0.5, y: cardTop(stages.length - 1) });
-      positions.set(third[0], { x: width * 0.83, y: cardTop(stages.length - 1) });
-    }
-    return { width, height: cardTop(0) + cardHeight + 24, positions };
-  }
-
-  function svgLine(svg, source, target, isWinner, isKnown, isThirdPlace, sourceNumber, targetNumber) {
-    const ns = "http://www.w3.org/2000/svg";
-    const line = document.createElementNS(ns, "path");
-    const startY = source.y;
-    const endY = target.y + 128;
-    // 水平、垂直構成直角折線；季軍戰走另一條高度，避免與冠軍戰重疊。
-    const midY = (startY + endY) / 2 + (isThirdPlace ? 16 : -8);
-    line.setAttribute("d", "M " + source.x + " " + startY
-      + " V " + midY
-      + " H " + target.x
-      + " V " + endY);
-    line.setAttribute("class", "draw-route"
-      + (isWinner ? " is-winner" : "")
-      + (!isWinner && (isKnown || isThirdPlace) ? " is-loser" : ""));
-    line.setAttribute("data-route-from", String(sourceNumber));
-    line.setAttribute("data-route-to", String(targetNumber));
-    svg.append(line);
-  }
-
-  function bracketCard(match, point) {
-    const card = element("article", "draw-tree-match" + (match.kind === "冠軍戰" ? " draw-tree-final" : ""));
-    card.style.left = point.x + "px";
-    card.style.top = point.y + "px";
-    const heading = element("div", "draw-tree-match-heading");
-    heading.append(element("span", "", "第 " + match.number + " 場"));
-    if (match.kind) heading.append(element("strong", "", match.kind));
-    card.append(heading);
-    match.names.forEach((name, side) => {
-      const competitor = element("div", "draw-tree-team", displayParticipantName(name));
-      if (match.winnerSide === side) competitor.classList.add("is-winning");
-      if (match.winnerSide !== null && match.winnerSide !== side) competitor.classList.add("is-losing");
-      card.append(competitor);
+    const root = final ? expandMatch(final.number) : null;
+    // 所有起始隊伍及 A1/B2 名次固定在同一底線，依 PDF 原有的左右分支排序。
+    const gap = 154;
+    const width = Math.max(1050, (leaves.length - 1) * gap + 188);
+    const left = (width - (leaves.length - 1) * gap) / 2;
+    const top = 94;
+    const step = 152;
+    const seedY = top + stages.length * step;
+    leaves.forEach((leaf, i) => {
+      leaf.x = left + i * gap;
+      leaf.y = seedY - 20;
+      leaf.index = i;
     });
-    const score = element("div", "draw-tree-score");
-    if (match.result) {
-      const parts = match.result.label.split(/\s+PK\s*/i);
-      score.append(element("span", "draw-tree-score-main", parts[0]));
-      if (parts.length > 1) score.append(element("span", "draw-tree-score-pk", "PK " + parts.slice(1).join(" ").trim()));
-    } else {
-      score.textContent = "尚未有比分";
+    function positionNode(node) {
+      if (node.type === "seed") return node;
+      node.children.forEach(positionNode);
+      node.x = (node.children[0].x + node.children[1].x) / 2;
+      node.y = top + (stages.length - 1 - node.roundIndex) * step;
+      positions.set(node.number, { x: node.x, y: node.y });
+      return node;
     }
-    card.append(score);
-    return card;
+    if (root) positionNode(root);
+    const semifinal = stages[stages.length - 2].matches;
+    const semifinalPositions = semifinal.map(([number]) => positions.get(number)).filter(Boolean);
+    return {
+      root, leaves, positions, seedY, all,
+      width, height: seedY + 92, bronze,
+      bronzeY: top + 69,
+      semifinalPositions
+    };
   }
 
-  function routeStatus(draw, resolved, target, participantIndex) {
-    const seed = target.seeds[participantIndex];
-    const source = seedReference(seed);
-    if (!source) return null;
-    const origin = resolved.get(source.match);
-    if (!origin || origin.winnerSide === null) return { status: "pending", source };
-    if (source.outcome === "敗") return { status: "bronze", source };
-
-    // 一旦這條路徑上的隊伍在後續輪次落敗，整段先前的晉級線也轉暗。
-    // 這裡用場次參照追蹤，避免不同隊伍同名造成誤判。
-    let match = target;
-    let side = participantIndex;
+  function progressionStatus(draw, resolved, startNumber, startSide, sourceLabel) {
+    const ref = seedReference(sourceLabel);
+    if (ref && ref.outcome === "敗") return "bronze";
+    if (ref && resolved.get(ref.match)?.winnerSide == null) return "pending";
+    let known = !!ref;
+    let number = startNumber;
+    let side = startSide;
     const visited = new Set();
-    while (match && !visited.has(match.number)) {
-      visited.add(match.number);
-      if (match.winnerSide === null) return { status: "advancing", source };
-      if (match.winnerSide !== side) return { status: "eliminated", source };
+    while (!visited.has(number)) {
+      visited.add(number);
+      const match = resolved.get(number);
+      if (!match || match.winnerSide == null) return known ? "advancing" : "pending";
+      if (match.winnerSide !== side) return "eliminated";
+      known = true;
       const next = draw.rounds.flatMap((round) => round.matches).find((entry) =>
-        entry.slice(1, 3).some((label) => label === "勝 " + match.number));
-      if (!next) return { status: "advancing", source };
-      const nextMatch = resolved.get(next[0]);
-      side = nextMatch.seeds.findIndex((label) => label === "勝 " + match.number);
-      match = nextMatch;
+        entry.slice(1, 3).includes("勝 " + number));
+      if (!next) return "advancing";
+      const upcoming = resolved.get(next[0]);
+      side = upcoming.seeds.indexOf("勝 " + number);
+      number = next[0];
     }
-    return { status: "advancing", source };
+    return "pending";
   }
 
   function setupBracketZoom(scroll, canvas, viewport, layout, controls, previous) {
     const minScale = 0.2;
     const maxScale = 2.4;
-    const initial = window.matchMedia("(max-width: 700px)").matches ? 0.2 : 1;
-    let scale = previous ? previous.scale : initial;
+    let scale = previous ? previous.scale : 1;
+    let manualZoom = previous ? previous.manualZoom : false;
     const percent = controls.querySelector("[data-draw-zoom-percent]");
     const clamp = (value) => Math.min(maxScale, Math.max(minScale, value));
 
@@ -454,19 +649,37 @@
       viewport.style.width = Math.round(layout.width * scale) + "px";
       viewport.style.height = Math.round(layout.height * scale) + "px";
       viewport.dataset.scale = String(scale);
+      viewport.dataset.manualZoom = String(manualZoom);
       canvas.style.transform = "scale(" + scale + ")";
       percent.textContent = Math.round(scale * 100) + "%";
+    }
+
+    function horizontalInset() {
+      return Math.max(0, (scroll.clientWidth - layout.width * scale) / 2);
+    }
+
+    function centerDiagram() {
+      scroll.scrollLeft = Math.max(0, (layout.width * scale - scroll.clientWidth) / 2);
+    }
+
+    function fitToScreen() {
+      if (manualZoom || scroll.clientWidth <= 0) return;
+      // 讓整張階梯圖在可用寬度內盡量放大，最小仍可縮至原先設定的 20%。
+      scale = clamp(Math.min(1, (scroll.clientWidth - 16) / layout.width));
+      renderScale();
+      centerDiagram();
     }
 
     function zoom(nextScale, anchorX, anchorY, contentPoint) {
       const next = clamp(nextScale);
       const origin = contentPoint || {
-        x: (scroll.scrollLeft + anchorX) / scale,
+        x: (scroll.scrollLeft + anchorX - horizontalInset()) / scale,
         y: (scroll.scrollTop + anchorY) / scale
       };
+      manualZoom = true;
       scale = next;
       renderScale();
-      scroll.scrollLeft = origin.x * scale - anchorX;
+      scroll.scrollLeft = origin.x * scale + horizontalInset() - anchorX;
       scroll.scrollTop = origin.y * scale - anchorY;
     }
 
@@ -480,8 +693,8 @@
       zoom(scale * 1.25, point.x, point.y);
     });
     controls.querySelector("[data-draw-zoom-reset]").addEventListener("click", () => {
-      const point = center();
-      zoom(initial, point.x, point.y);
+      manualZoom = false;
+      fitToScreen();
     });
 
     let gesture = null;
@@ -501,7 +714,7 @@
           type: "pinch",
           distance: Math.max(1, distance(touches[0], touches[1])),
           scale,
-          world: { x: (scroll.scrollLeft + middle.x) / scale, y: (scroll.scrollTop + middle.y) / scale }
+          world: { x: (scroll.scrollLeft + middle.x - horizontalInset()) / scale, y: (scroll.scrollTop + middle.y) / scale }
         };
       } else if (touches.length === 1) {
         gesture = {
@@ -543,12 +756,28 @@
     }, { passive: false });
 
     renderScale();
-    if (previous) {
+    if (previous && manualZoom) {
       scroll.scrollLeft = previous.left;
       scroll.scrollTop = previous.top;
-    } else if (window.matchMedia("(max-width: 700px)").matches) {
-      scroll.scrollLeft = Math.max(0, (layout.width * scale - scroll.clientWidth) / 2);
+    } else {
+      fitToScreen();
     }
+
+    // 原本圖表預設收合，展開後才會有實際寬度；旋轉螢幕也重新適配。
+    const details = scroll.closest("details");
+    const handleToggle = () => {
+      if (details?.open) requestAnimationFrame(fitToScreen);
+    };
+    details?.addEventListener("toggle", handleToggle);
+    const observer = typeof ResizeObserver === "function"
+      ? new ResizeObserver(fitToScreen) : null;
+    if (observer) observer.observe(scroll);
+    else window.addEventListener("resize", fitToScreen);
+    controls.parentElement.__cleanupBracketZoom = () => {
+      details?.removeEventListener("toggle", handleToggle);
+      observer?.disconnect();
+      if (!observer) window.removeEventListener("resize", fitToScreen);
+    };
   }
 
   function drawBracket(draw, rows, slot, key) {
@@ -556,9 +785,11 @@
     const priorViewport = slot.querySelector(".draw-tree-viewport");
     const previous = priorScroll && priorViewport ? {
       scale: Number(priorViewport.dataset.scale) || 1,
+      manualZoom: priorViewport.dataset.manualZoom === "true",
       left: priorScroll.scrollLeft,
       top: priorScroll.scrollTop
     } : null;
+    slot.__cleanupBracketZoom?.();
     const layout = bracketLayout(draw);
     const resolved = resolveBracket(draw, rows, key);
     const scroll = element("div", "draw-tree-scroll");
@@ -573,37 +804,109 @@
     svg.setAttribute("class", "draw-tree-lines");
     svg.setAttribute("aria-hidden", "true");
 
-    draw.rounds.forEach((round, rowIndex) => {
-      const label = element("div", "draw-tree-stage-label", round.label);
-      label.style.top = (layout.positions.get(round.matches[0][0]).y - 36) + "px";
-      canvas.append(label);
-      round.matches.forEach(([number, left, right]) => {
-        const match = resolved.get(number);
-        [left, right].forEach((seed, side) => {
-          const state = routeStatus(draw, resolved, match, side);
-          if (!state) return;
-          const origin = resolved.get(state.source.match);
-          if (origin) svgLine(
-            svg, layout.positions.get(origin.number), layout.positions.get(number),
-            state.status === "advancing",
-            state.status === "eliminated" || state.status === "bronze",
-            match.kind === "季軍戰", origin.number, number
-          );
-        });
-        const card = bracketCard(match, layout.positions.get(number));
-        if (match.winnerSide !== null && match.kind !== "季軍戰") {
-          const winningPath = draw.rounds.flatMap((stage) => stage.matches).find((entry) =>
-            entry.slice(1, 3).some((label) => label === "勝 " + match.number));
-          if (winningPath) {
-            const next = resolved.get(winningPath[0]);
-            const side = next.seeds.findIndex((label) => label === "勝 " + match.number);
-            if (routeStatus(draw, resolved, next, side)?.status === "eliminated") {
-              card.querySelector(".draw-tree-team.is-winning")?.classList.add("is-eliminated");
-            }
-          }
-        }
-        canvas.append(card);
+    function path(d, className, source, target) {
+      const line = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      line.setAttribute("d", d);
+      line.setAttribute("class", className);
+      if (source != null) line.setAttribute("data-route-from", String(source));
+      if (target != null) line.setAttribute("data-route-to", String(target));
+      svg.append(line);
+    }
+
+    function scoreByBranch(match, node, child, side) {
+      if (!match.result || !match.sourceSides) return;
+      const sheetSide = match.sourceSides[side];
+      const score = element("div", "draw-branch-score");
+      score.style.left = (child.x + (child.x <= node.x ? -13 : 13)) + "px";
+      score.style.top = (child.y - 57) + "px";
+      score.classList.add(child.x <= node.x ? "draw-branch-score--left" : "draw-branch-score--right");
+      score.append(element("strong", "draw-branch-goals", String(match.result.goals[sheetSide])));
+      if (match.result.penalties) {
+        score.append(element("small", "draw-branch-pk", "PK " + match.result.penalties[sheetSide]));
+      }
+      score.title = displayParticipantName(match.names[side]) + "｜" + match.result.label;
+      canvas.append(score);
+    }
+
+    function drawRound(node) {
+      if (!node || node.type === "seed") return;
+      node.children.forEach((child, side) => {
+        drawRound(child);
+        const sourceY = child.y;
+        const status = progressionStatus(draw, resolved, node.number, side, node.seeds[side]);
+        path("M " + child.x + " " + sourceY + " V " + node.y + " H " + node.x,
+          "draw-route" + (status === "advancing" ? " is-winner" : status === "eliminated" ? " is-loser" : ""),
+          child.type === "match" ? child.number : node.seeds[side],
+          node.number);
+        scoreByBranch(resolved.get(node.number), node, child, side);
       });
+
+      const match = resolved.get(node.number);
+      const marker = element("div", "draw-tree-node");
+      marker.style.left = node.x + "px";
+      // 一般場次標在橫線下方，避免文字壓在線上；冠軍與季軍保留原位置。
+      marker.style.top = (node.kind === "冠軍戰" ? node.y - 52 : node.y + 16) + "px";
+      if (node.kind === "冠軍戰") marker.append(element("span", "draw-tree-final-title", "冠軍戰"));
+      if (!match.result || !match.sourceSides) {
+        marker.append(element("strong", "draw-tree-game-no", "(" + chineseMatchNo(node.number) + ")"));
+      }
+      marker.title = "第 " + node.number + " 場：" + match.names.map(displayParticipantName).join(" vs ")
+        + (match.result ? "｜" + match.result.label : "");
+      canvas.append(marker);
+    }
+
+    drawRound(layout.root);
+
+    if (layout.bronze && layout.semifinalPositions.length === 2) {
+      const [first, second] = layout.semifinalPositions;
+      const middleX = (first.x + second.x) / 2;
+      // PDF 以虛線接續兩場準決賽敗隊，作為季軍戰獨立的分支。
+      path("M " + first.x + " " + first.y + " V " + layout.bronzeY
+        + " H " + second.x + " V " + second.y,
+        "draw-route is-bronze", first.number, layout.bronze.number);
+      const third = element("div", "draw-tree-node draw-tree-third");
+      third.style.left = middleX + "px";
+      third.style.top = (layout.bronzeY + 7) + "px";
+      third.append(element("span", "draw-tree-third-title", "季軍戰"));
+      const bronzeMatch = resolved.get(layout.bronze.number);
+      if (!bronzeMatch.result || !bronzeMatch.sourceSides) {
+        third.append(element("strong", "draw-tree-game-no", "(" + chineseMatchNo(layout.bronze.number) + ")"));
+      } else {
+        // 季軍戰獨立於主線，在虛線兩端直接標上各隊的成績。
+        bronzeMatch.sourceSides.forEach((sheetSide, side) => {
+          const score = element("span", "draw-bronze-score");
+          score.style.left = (side === 0 ? first.x : second.x) + "px";
+          score.style.top = (layout.bronzeY + 14) + "px";
+          score.append(element("strong", "", String(bronzeMatch.result.goals[sheetSide])));
+          if (bronzeMatch.result.penalties) {
+            score.append(element("small", "", "PK " + bronzeMatch.result.penalties[sheetSide]));
+          }
+          score.title = bronzeMatch.names[side];
+          canvas.append(score);
+        });
+      }
+      canvas.append(third);
+    }
+
+    draw.rounds.slice(0, -1).forEach((round) => {
+      const first = layout.positions.get(round.matches[0][0]);
+      if (!first) return;
+      const label = element("div", "draw-tree-stage-label", round.label);
+      label.style.top = (first.y - 8) + "px";
+      canvas.append(label);
+    });
+
+    layout.leaves.forEach((leaf) => {
+      const seed = element("div", "draw-tree-seed");
+      seed.style.left = leaf.x + "px";
+      seed.style.top = (layout.seedY + 5) + "px";
+      seed.append(element("strong", "draw-tree-seed-code", displayParticipantName(leaf.label)));
+      const rankName = resolved.get(leaf.number)?.names[leaf.side] || leaf.label;
+      if (rankName !== leaf.label) seed.append(element("small", "draw-tree-seed-team", displayParticipantName(rankName)));
+      const state = progressionStatus(draw, resolved, leaf.number, leaf.side, leaf.label);
+      if (state === "eliminated") seed.classList.add("is-eliminated");
+      if (state === "advancing") seed.classList.add("is-advancing");
+      canvas.append(seed);
     });
     canvas.prepend(svg);
     const viewport = element("div", "draw-tree-viewport");
@@ -620,7 +923,7 @@
     toolbar.append(
       element("span", "draw-zoom-tip", "雙指縮放 · 單指拖曳"),
       zoomButton("−", "縮小淘汰賽圖", "data-draw-zoom-out"),
-      zoomButton("100%", "還原預設縮放", "data-draw-zoom-reset"),
+      zoomButton("適合", "自動調整至最佳大小並置中", "data-draw-zoom-reset"),
       zoomButton("+", "放大淘汰賽圖", "data-draw-zoom-in")
     );
     toolbar.querySelector("[data-draw-zoom-reset]").setAttribute("data-draw-zoom-percent", "");
@@ -648,7 +951,7 @@
 
     const groups = collapsible("小組對戰圖", draw.label + " · 點擊查看各組對戰圖", "draw-fold-groups");
     const groupsContent = element("div", "draw-fold-content");
-    groupsContent.append(groupSection(draw.label, draw.groups));
+    groupsContent.append(groupSection(draw.label, draw.groups, "", GROUP_GAME_IDS[key]));
     if (draw.extra && draw.extra.visible) groupsContent.append(groupSection(draw.extra.label, draw.extra.groups, draw.extra.note));
     groups.append(groupsContent);
     root.append(groups);
@@ -662,6 +965,74 @@
     root.append(knockout);
     drawBracket(draw, [], diagram, key);
     root.hidden = false;
+  }
+
+  function updateGroupScores(draw, key, rows, root) {
+    const results = readMatchResults(rows);
+    const standings = groupStats(key, draw, results);
+    const completedGroups = new Map();
+    draw.groups.forEach((group, index) => {
+      completedGroups.set(group[0], completedGroupRanks(
+        key, draw, results, index, standings.get(group[0])
+      ));
+    });
+    root.querySelectorAll(".draw-group-card").forEach((card) => {
+      const group = draw.groups[Number(card.dataset.groupIndex)];
+      const state = group && completedGroups.get(group[0]);
+      card.classList.toggle("is-complete", !!state?.ranking);
+      const status = card.querySelector(".draw-group-name small");
+      if (status) status.textContent = state
+        ? (state.ranking ? "已完成分組" : state.reason || "同分待確認")
+        : (group.length - 1) + " 隊";
+    });
+    root.querySelectorAll(".draw-group-team").forEach((node) => {
+      const index = Number(node.dataset.teamIndex);
+      const score = standings.get(node.dataset.group)?.[index];
+      const points = node.querySelector(".draw-group-team-points");
+      if (points) {
+        points.textContent = (score?.points || 0) + " 分";
+        points.title = "已賽 " + (score?.played || 0) + " 場";
+      }
+      const badge = node.querySelector(".draw-group-team-rank");
+      if (badge) {
+        const completed = completedGroups.get(node.dataset.group);
+        const position = completed?.ranking?.findIndex((entry) => entry.index === index) ?? -1;
+        const qualified = position >= 0 && position < 2;
+        badge.textContent = qualified
+          ? node.dataset.group + (position + 1) + " · 分組第 " + (position + 1) + " 名"
+          : "";
+        badge.hidden = !qualified;
+        node.classList.toggle("is-group-first", position === 0);
+        node.classList.toggle("is-group-second", position === 1);
+      }
+    });
+    root.querySelectorAll("[data-group-game]").forEach((marker) => {
+      const matchId = Number(marker.getAttribute("data-group-game"));
+      const game = results.get(matchId);
+      const result = game?.result;
+      const branches = marker.querySelectorAll("[data-score-side]");
+      let sheetSides = null;
+      if (result) {
+        const groupIndex = Number(marker.closest(".draw-group-card")?.dataset.groupIndex);
+        const gameIndex = GROUP_GAME_IDS[key]?.[groupIndex]?.indexOf(matchId) ?? -1;
+        const teamCount = (draw.groups[groupIndex]?.length || 1) - 1;
+        const edge = GROUP_EDGES[teamCount]?.[gameIndex];
+        const actual = game.teams.map((name) => teamSlot(draw, groupIndex, name));
+        if (edge && actual[0] !== actual[1]
+          && edge.teams.every((index) => actual.includes(index))) {
+          // 確認兩個隊名對應圖形兩端，才分別填入各隊靠近隊名的得分。
+          sheetSides = edge.teams.map((index) => actual.indexOf(index));
+        }
+      }
+      branches.forEach((branch, side) => {
+        const score = branch.querySelector(".draw-group-match-score");
+        const penalty = branch.querySelector(".draw-group-match-pk");
+        if (score) score.textContent = result && sheetSides
+          ? String(result.goals[sheetSides[side]]) : "";
+        if (penalty) penalty.textContent = result?.penalties && sheetSides
+          ? "PK " + result.penalties[sheetSides[side]] : "";
+      });
+    });
   }
 
   function ready(callback) {
@@ -704,13 +1075,10 @@
       if (signature === lastResultSignature) return;
       lastResultSignature = signature;
       latestRows = event.detail.rows;
+      updateGroupScores(DRAWS[currentKey], currentKey, latestRows, root);
       const host = root.querySelector(".draw-tree-host");
       if (!host) return;
-      const priorScroll = host.querySelector(".draw-tree-scroll");
-      const scrollLeft = priorScroll ? priorScroll.scrollLeft : 0;
       drawBracket(DRAWS[currentKey], latestRows, host, currentKey);
-      const nextScroll = host.querySelector(".draw-tree-scroll");
-      if (nextScroll) nextScroll.scrollLeft = scrollLeft;
     });
   });
 })();
