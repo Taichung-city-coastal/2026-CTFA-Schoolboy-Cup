@@ -601,6 +601,7 @@ button, a { -webkit-tap-highlight-color: transparent; }
   grid-template-columns: repeat(2,minmax(0,1fr));
   gap: 16px;
 }
+.venue-grid-single { width: min(760px, 100%); grid-template-columns: minmax(0,1fr); }
 .venue-card {
   position: relative;
   overflow: hidden;
@@ -1215,8 +1216,8 @@ button, a { -webkit-tap-highlight-color: transparent; }
   text-align: center;
   line-height: 1.15;
 }
-.draw-branch-score--left { transform: translateX(-100%); }
-.draw-branch-score--right { transform: translateX(0); }
+.draw-branch-score--left { transform: translateX(0); }
+.draw-branch-score--right { transform: translateX(-100%); }
 .draw-branch-goals { color: #f2f7ff; font: 900 19px "Outfit",sans-serif; }
 .draw-branch-pk { color: var(--event-yellow); font: 800 11px "Outfit",sans-serif; white-space: nowrap; }
 .draw-bronze-score {

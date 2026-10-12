@@ -817,9 +817,12 @@
       if (!match.result || !match.sourceSides) return;
       const sheetSide = match.sourceSides[side];
       const score = element("div", "draw-branch-score");
-      score.style.left = (child.x + (child.x <= node.x ? -13 : 13)) + "px";
+      // 將各隊分數放在階梯線兩側向內的區域，而非直線外側。
+      // 第一隊靠左線內側、第二隊靠右線內側，兩邊仍各自對應正確隊伍。
+      const leftBranch = child.x < node.x;
+      score.style.left = (child.x + (leftBranch ? 12 : -12)) + "px";
       score.style.top = (child.y - 57) + "px";
-      score.classList.add(child.x <= node.x ? "draw-branch-score--left" : "draw-branch-score--right");
+      score.classList.add(leftBranch ? "draw-branch-score--left" : "draw-branch-score--right");
       score.append(element("strong", "draw-branch-goals", String(match.result.goals[sheetSide])));
       if (match.result.penalties) {
         score.append(element("small", "draw-branch-pk", "PK " + match.result.penalties[sheetSide]));
@@ -847,9 +850,8 @@
       // 一般場次標在橫線下方，避免文字壓在線上；冠軍與季軍保留原位置。
       marker.style.top = (node.kind === "冠軍戰" ? node.y - 52 : node.y + 16) + "px";
       if (node.kind === "冠軍戰") marker.append(element("span", "draw-tree-final-title", "冠軍戰"));
-      if (!match.result || !match.sourceSides) {
-        marker.append(element("strong", "draw-tree-game-no", "(" + chineseMatchNo(node.number) + ")"));
-      }
+      // 已有比分時仍保留場次編號，方便對照正式賽程。
+      marker.append(element("strong", "draw-tree-game-no", "(" + chineseMatchNo(node.number) + ")"));
       marker.title = "第 " + node.number + " 場：" + match.names.map(displayParticipantName).join(" vs ")
         + (match.result ? "｜" + match.result.label : "");
       canvas.append(marker);
@@ -868,14 +870,14 @@
       third.style.left = middleX + "px";
       third.style.top = (layout.bronzeY + 7) + "px";
       third.append(element("span", "draw-tree-third-title", "季軍戰"));
+      third.append(element("strong", "draw-tree-game-no", "(" + chineseMatchNo(layout.bronze.number) + ")"));
       const bronzeMatch = resolved.get(layout.bronze.number);
-      if (!bronzeMatch.result || !bronzeMatch.sourceSides) {
-        third.append(element("strong", "draw-tree-game-no", "(" + chineseMatchNo(layout.bronze.number) + ")"));
-      } else {
+      if (bronzeMatch.result && bronzeMatch.sourceSides) {
         // 季軍戰獨立於主線，在虛線兩端直接標上各隊的成績。
         bronzeMatch.sourceSides.forEach((sheetSide, side) => {
           const score = element("span", "draw-bronze-score");
-          score.style.left = (side === 0 ? first.x : second.x) + "px";
+          // 季軍戰的兩隊比分也改為靠近各自線條的內側。
+          score.style.left = (side === 0 ? first.x + 52 : second.x - 52) + "px";
           score.style.top = (layout.bronzeY + 14) + "px";
           score.append(element("strong", "", String(bronzeMatch.result.goals[sheetSide])));
           if (bronzeMatch.result.penalties) {
