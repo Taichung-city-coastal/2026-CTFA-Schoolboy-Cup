@@ -30,6 +30,24 @@
           </div>
           <a href="live-scores.html">查看賽程 ↗</a>
         </article>
+        <article class="notice-card notice-card-interactive" data-open-east-schedule data-reveal data-reveal-delay="60">
+          <time datetime="2026-10-15">2026.10.15</time>
+          <div>
+            <span class="status-pill">賽程公告</span>
+            <h2>東區賽程</h2>
+            <p>2026 全國學童盃足球錦標賽東區預賽賽程已提供，點擊公告即可查看完整賽程 PDF。請參賽球隊留意比賽時間、場地與場次資訊；如有調整，以大會最新公告為準。</p>
+          </div>
+          <button class="notice-open-dialog" type="button" aria-haspopup="dialog" aria-controls="east-schedule-dialog">查看賽程 ↗</button>
+        </article>
+        <article class="notice-card notice-card-interactive" data-open-south-schedule data-reveal data-reveal-delay="60">
+          <time datetime="2026-10-14">2026.10.14</time>
+          <div>
+            <span class="status-pill">賽程公告</span>
+            <h2>南區賽程</h2>
+            <p>2026 全國學童盃足球錦標賽南區預賽賽程資料已提供，請依參賽組別選擇「公開組」或「學校組」查看完整賽程 PDF。各場次時間、場地及後續異動，請以大會最新公告為準。</p>
+          </div>
+          <button class="notice-open-dialog" type="button" aria-haspopup="dialog" aria-controls="south-schedule-dialog">選擇組別 ↗</button>
+        </article>
         <article class="notice-card" data-reveal data-reveal-delay="80">
           <time datetime="2026-09-23">2026.09.23</time>
           <div>
@@ -42,7 +60,42 @@
       </div>
     </section>
   </main>
+  <dialog id="south-schedule-dialog" class="schedule-dialog" aria-labelledby="south-schedule-title" aria-describedby="south-schedule-description">
+    <div class="schedule-dialog-panel">
+      <button class="schedule-dialog-close" type="button" aria-label="關閉選擇視窗">×</button>
+      <span class="page-kicker">2026 SCHOOLBOY CUP · SOUTH REGION</span>
+      <h2 id="south-schedule-title">南區預賽賽程</h2>
+      <p id="south-schedule-description">請選擇參賽組別，開啟對應的完整賽程 PDF。</p>
+      <div class="schedule-dialog-options">
+        <a href="2026全國學童盃足球錦標賽南區預賽公開組_V1.pdf" type="application/pdf" target="_blank" rel="noopener noreferrer">
+          <strong>公開組</strong>
+          <span>查看南區公開組賽程 PDF <span aria-hidden="true">↗</span></span>
+        </a>
+        <a href="2026全國學童盃足球錦標賽南區預賽學校組_V1.pdf" type="application/pdf" target="_blank" rel="noopener noreferrer">
+          <strong>學校組</strong>
+          <span>查看南區學校組賽程 PDF <span aria-hidden="true">↗</span></span>
+        </a>
+      </div>
+      <p class="schedule-dialog-note">賽程如有異動，請以大會後續正式公告為準。</p>
+    </div>
+  </dialog>
+  <dialog id="east-schedule-dialog" class="schedule-dialog" aria-labelledby="east-schedule-title" aria-describedby="east-schedule-description">
+    <div class="schedule-dialog-panel">
+      <button class="schedule-dialog-close" type="button" aria-label="關閉東區賽程視窗">×</button>
+      <span class="page-kicker">2026 SCHOOLBOY CUP · EAST REGION</span>
+      <h2 id="east-schedule-title">東區預賽賽程</h2>
+      <p id="east-schedule-description">請點擊下方按鈕，開啟完整的東區預賽賽程 PDF。</p>
+      <div class="schedule-dialog-options schedule-dialog-options--single">
+        <a href="2026全國學童盃足球錦標賽東區預賽.pdf" type="application/pdf" target="_blank" rel="noopener noreferrer">
+          <strong>查看東區賽程</strong>
+          <span>開啟完整賽程 PDF <span aria-hidden="true">↗</span></span>
+        </a>
+      </div>
+      <p class="schedule-dialog-note">賽程如有異動，請以大會後續正式公告為準。</p>
+    </div>
+  </dialog>
   <script src="toolbar.js"></script>
   <script src="app.js"></script>
+  <script src="announcements.js"></script>
 </body>
 </html>

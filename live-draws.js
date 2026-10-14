@@ -44,7 +44,7 @@
       groups: [
         ["A", "國安國小", "臺中市西屯國小", "潭子國小"],
         ["B", "彰化縣永靖國小", "虎尾國小", "立人國小"],
-        ["C", "虎尾國小", "南投縣太平國小", "彰化縣南郭國小"],
+        ["C", "埔里國小", "南投縣太平國小", "彰化縣南郭國小"],
         ["D", "臺中市永隆國小", "彰化花壇國小", "南投縣水里國小"],
         ["E", "仁美國小", "臺中市協和國小", "賴厝國小"],
         ["F", "台中市惠文國小", "彰化市東芳國小", "大成鵟鷹足球隊U12"],
@@ -637,6 +637,81 @@
     return "pending";
   }
 
+  // 每束光從底部出發；兩隊抵達同一場次的交會點才公布比分並分出勝負。
+  // 若兩支路線長度不同，先到者等待，勝者在雙方碰面後才往下一輪。
+  function bottomUpLightRace(layout, resolved, speed = 170) {
+    const paths = [];
+    const meetings = new Map();
+    const semifinalLosers = new Map();
+    const finalRound = layout.root?.roundIndex || 0;
+
+    function seedPath(seed) {
+      const path = {
+        leaf: seed, d: "M " + seed.x + " " + seed.y,
+        length: 0, time: 0, x: seed.x, y: seed.y,
+        segments: [], fadeAt: null, isBronze: false
+      };
+      paths.push(path);
+      return path;
+    }
+
+    function addSegment(path, x, y) {
+      const distance = Math.abs(path.y - y) + Math.abs(path.x - x);
+      const start = path.time;
+      const end = start + distance / speed * 1000;
+      path.segments.push({ start, end, from: path.length, to: path.length + distance });
+      path.d += " V " + y + " H " + x;
+      path.length += distance;
+      path.x = x;
+      path.y = y;
+      return end;
+    }
+
+    function advance(node) {
+      if (node.type === "seed") return seedPath(node);
+      const contenders = node.children.map(advance);
+      const match = resolved.get(node.number);
+      if (!match?.result || !match.sourceSides || match.winnerSide == null ||
+        contenders.some((contender) => !contender)) return null;
+
+      const arrivals = contenders.map((contender) => addSegment(contender, node.x, node.y));
+      const encounter = Math.max(...arrivals);
+      meetings.set(node.number, encounter);
+      contenders.forEach((contender) => { contender.time = encounter; });
+
+      const loser = contenders[1 - match.winnerSide];
+      loser.fadeAt = encounter;
+      if (node.roundIndex === finalRound - 1) semifinalLosers.set(node.number, loser);
+      return contenders[match.winnerSide];
+    }
+
+    if (layout.root) advance(layout.root);
+
+    const bronze = layout.bronze && resolved.get(layout.bronze.number);
+    if (bronze?.result && bronze.sourceSides && bronze.winnerSide != null &&
+      layout.semifinalPositions.length === 2) {
+      const contenders = bronze.seeds.map((seed) => {
+        const ref = seedReference(seed);
+        return ref?.outcome === "敗" ? semifinalLosers.get(ref.match) : null;
+      });
+      if (contenders.every(Boolean)) {
+        const middleX = (layout.semifinalPositions[0].x +
+          layout.semifinalPositions[1].x) / 2;
+        const arrivals = contenders.map((contender) => {
+          contender.fadeAt = null;
+          contender.isBronze = true;
+          return addSegment(contender, middleX, layout.bronzeY);
+        });
+        const encounter = Math.max(...arrivals);
+        meetings.set(layout.bronze.number, encounter);
+        contenders[1 - bronze.winnerSide].fadeAt = encounter;
+        contenders.forEach((contender) => { contender.time = encounter; });
+      }
+    }
+
+    return { paths: paths.filter((path) => path.length > 0), meetings };
+  }
+
   function setupBracketZoom(scroll, canvas, viewport, layout, controls, previous) {
     const minScale = 0.2;
     const maxScale = 2.4;
@@ -803,6 +878,16 @@
     svg.setAttribute("viewBox", "0 0 " + layout.width + " " + layout.height);
     svg.setAttribute("class", "draw-tree-lines");
     svg.setAttribute("aria-hidden", "true");
+    const lightLayer = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    lightLayer.setAttribute("class", "draw-route-lights");
+    const race = bottomUpLightRace(layout, resolved, 170);
+    const scoreNodes = new Map();
+    const seedNodes = new Map();
+    const routeLines = new Map();
+    const movingLights = [];
+    let animatedPaths = 0;
+    const raceStartDelay = 220;
+    const fadeDuration = 420;
 
     function path(d, className, source, target) {
       const line = document.createElementNS("http://www.w3.org/2000/svg", "path");
@@ -811,24 +896,49 @@
       if (source != null) line.setAttribute("data-route-from", String(source));
       if (target != null) line.setAttribute("data-route-to", String(target));
       svg.append(line);
+      return line;
     }
 
-    function scoreByBranch(match, node, child, side) {
-      if (!match.result || !match.sourceSides) return;
-      const sheetSide = match.sourceSides[side];
-      const score = element("div", "draw-branch-score");
-      // 將各隊分數放在階梯線兩側向內的區域，而非直線外側。
-      // 第一隊靠左線內側、第二隊靠右線內側，兩邊仍各自對應正確隊伍。
-      const leftBranch = child.x < node.x;
-      score.style.left = (child.x + (leftBranch ? 12 : -12)) + "px";
-      score.style.top = (child.y - 57) + "px";
-      score.classList.add(leftBranch ? "draw-branch-score--left" : "draw-branch-score--right");
-      score.append(element("strong", "draw-branch-goals", String(match.result.goals[sheetSide])));
+    function animatedLight({ leaf, d, length, segments, fadeAt, time, isBronze }) {
+      const ns = "http://www.w3.org/2000/svg";
+      const trace = document.createElementNS(ns, "path");
+      trace.setAttribute("d", d);
+      trace.setAttribute("class", "draw-route-light" + (isBronze ? " is-bronze-light" : ""));
+      trace.style.strokeDasharray = length + " " + length;
+      trace.style.strokeDashoffset = String(length);
+      lightLayer.append(trace);
+
+      const spark = document.createElementNS(ns, "circle");
+      spark.setAttribute("r", "6.5");
+      spark.setAttribute("cx", "0");
+      spark.setAttribute("cy", "0");
+      spark.setAttribute("class", "draw-route-spark" + (isBronze ? " is-bronze-light" : ""));
+      lightLayer.append(spark);
+      movingLights.push({ trace, spark, length, segments, fadeAt, endTime: time,
+        seed: seedNodes.get(leaf) });
+      animatedPaths += 1;
+    }
+
+    function appendMatchScore(marker, match) {
+      // 分數一律放在場次正下方、同一水平線；仍依圖中的左右隊伍對應試算表。
+      if (!match?.result || !match.sourceSides) return;
+      const [left, right] = match.sourceSides;
+      const block = element("div", "draw-tree-match-score");
+      block.append(element("strong", "draw-tree-match-goals",
+        match.result.goals[left] + " : " + match.result.goals[right]));
       if (match.result.penalties) {
-        score.append(element("small", "draw-branch-pk", "PK " + match.result.penalties[sheetSide]));
+        block.append(element("small", "draw-tree-match-pk",
+          "PK " + match.result.penalties[left] + " : " + match.result.penalties[right]));
       }
-      score.title = displayParticipantName(match.names[side]) + "｜" + match.result.label;
-      canvas.append(score);
+      block.setAttribute("aria-label", match.names[0] + " " + match.result.goals[left] + " 比 " +
+        match.result.goals[right] + " " + match.names[1]);
+      const matchNumber = Number(marker.dataset.matchNumber);
+      if (race.meetings.has(matchNumber)) {
+        block.classList.add("is-score-pending");
+        block.setAttribute("aria-hidden", "true");
+        scoreNodes.set(matchNumber, block);
+      }
+      marker.append(block);
     }
 
     function drawRound(node) {
@@ -837,21 +947,27 @@
         drawRound(child);
         const sourceY = child.y;
         const status = progressionStatus(draw, resolved, node.number, side, node.seeds[side]);
-        path("M " + child.x + " " + sourceY + " V " + node.y + " H " + node.x,
+        const route = "M " + child.x + " " + sourceY + " V " + node.y + " H " + node.x;
+        const line = path(route,
           "draw-route" + (status === "advancing" ? " is-winner" : status === "eliminated" ? " is-loser" : ""),
           child.type === "match" ? child.number : node.seeds[side],
           node.number);
-        scoreByBranch(resolved.get(node.number), node, child, side);
+        if (!routeLines.has(node.number)) routeLines.set(node.number, []);
+        routeLines.get(node.number)[side] = line;
       });
 
       const match = resolved.get(node.number);
       const marker = element("div", "draw-tree-node");
       marker.style.left = node.x + "px";
+      marker.dataset.matchNumber = String(node.number);
       // 一般場次標在橫線下方，避免文字壓在線上；冠軍與季軍保留原位置。
-      marker.style.top = (node.kind === "冠軍戰" ? node.y - 52 : node.y + 16) + "px";
+      marker.style.top = (node.kind === "冠軍戰"
+        ? node.y - (match?.result && match.sourceSides ? 91 : 52)
+        : node.y + 16) + "px";
       if (node.kind === "冠軍戰") marker.append(element("span", "draw-tree-final-title", "冠軍戰"));
       // 已有比分時仍保留場次編號，方便對照正式賽程。
       marker.append(element("strong", "draw-tree-game-no", "(" + chineseMatchNo(node.number) + ")"));
+      appendMatchScore(marker, match);
       marker.title = "第 " + node.number + " 場：" + match.names.map(displayParticipantName).join(" vs ")
         + (match.result ? "｜" + match.result.label : "");
       canvas.append(marker);
@@ -866,27 +982,14 @@
       path("M " + first.x + " " + first.y + " V " + layout.bronzeY
         + " H " + second.x + " V " + second.y,
         "draw-route is-bronze", first.number, layout.bronze.number);
+      const bronzeMatch = resolved.get(layout.bronze.number);
       const third = element("div", "draw-tree-node draw-tree-third");
       third.style.left = middleX + "px";
       third.style.top = (layout.bronzeY + 7) + "px";
+      third.dataset.matchNumber = String(layout.bronze.number);
       third.append(element("span", "draw-tree-third-title", "季軍戰"));
       third.append(element("strong", "draw-tree-game-no", "(" + chineseMatchNo(layout.bronze.number) + ")"));
-      const bronzeMatch = resolved.get(layout.bronze.number);
-      if (bronzeMatch.result && bronzeMatch.sourceSides) {
-        // 季軍戰獨立於主線，在虛線兩端直接標上各隊的成績。
-        bronzeMatch.sourceSides.forEach((sheetSide, side) => {
-          const score = element("span", "draw-bronze-score");
-          // 季軍戰的兩隊比分也改為靠近各自線條的內側。
-          score.style.left = (side === 0 ? first.x + 52 : second.x - 52) + "px";
-          score.style.top = (layout.bronzeY + 14) + "px";
-          score.append(element("strong", "", String(bronzeMatch.result.goals[sheetSide])));
-          if (bronzeMatch.result.penalties) {
-            score.append(element("small", "", "PK " + bronzeMatch.result.penalties[sheetSide]));
-          }
-          score.title = bronzeMatch.names[side];
-          canvas.append(score);
-        });
-      }
+      appendMatchScore(third, bronzeMatch);
       canvas.append(third);
     }
 
@@ -908,8 +1011,15 @@
       const state = progressionStatus(draw, resolved, leaf.number, leaf.side, leaf.label);
       if (state === "eliminated") seed.classList.add("is-eliminated");
       if (state === "advancing") seed.classList.add("is-advancing");
+      seedNodes.set(leaf, seed);
       canvas.append(seed);
     });
+    // 靜態場次線照原圖繪製；動畫則每支隊伍只有一條連續路線，
+    // 由最底部出發，依已打完的晉級結果逐層往上接續。
+    race.paths.forEach(animatedLight);
+    svg.append(lightLayer);
+    // 原始勝隊線不能在開啟動畫前直接發亮；由光線沿路線逐段點亮。
+    if (animatedPaths) svg.classList.add("has-light-races");
     canvas.prepend(svg);
     const viewport = element("div", "draw-tree-viewport");
     viewport.append(canvas);
@@ -923,7 +1033,9 @@
       return button;
     }
     toolbar.append(
-      element("span", "draw-zoom-tip", "雙指縮放 · 單指拖曳"),
+      element("span", "draw-zoom-tip", animatedPaths
+        ? "展開後光線由最下方同步晉級 · 雙指縮放"
+        : "雙指縮放 · 單指拖曳"),
       zoomButton("−", "縮小淘汰賽圖", "data-draw-zoom-out"),
       zoomButton("適合", "自動調整至最佳大小並置中", "data-draw-zoom-reset"),
       zoomButton("+", "放大淘汰賽圖", "data-draw-zoom-in")
@@ -931,6 +1043,102 @@
     toolbar.querySelector("[data-draw-zoom-reset]").setAttribute("data-draw-zoom-percent", "");
     slot.replaceChildren(toolbar, scroll);
     setupBracketZoom(scroll, canvas, viewport, layout, toolbar, previous);
+    if (animatedPaths) {
+      const fold = scroll.closest("details");
+      const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+      const lastEvent = Math.max(0, ...race.paths.map((line) =>
+        Math.max(line.segments[line.segments.length - 1].end,
+          (line.fadeAt ?? 0) + fadeDuration)));
+      let frameId = null;
+      let startTime = null;
+
+      function revealScore(number) {
+        const score = scoreNodes.get(number);
+        if (score && score.classList.contains("is-score-pending")) {
+          score.classList.remove("is-score-pending");
+          score.classList.add("is-score-revealed");
+          score.removeAttribute("aria-hidden");
+        }
+        const match = resolved.get(number);
+        const losingRoute = routeLines.get(number)?.[1 - match?.winnerSide];
+        losingRoute?.classList.add("is-collided");
+      }
+
+      function reset() {
+        if (frameId !== null) window.clearTimeout(frameId);
+        frameId = null;
+        startTime = null;
+        movingLights.forEach(({ trace, spark, length }) => {
+          trace.style.strokeDashoffset = String(length);
+          trace.style.opacity = "0";
+          spark.style.opacity = "0";
+        });
+        seedNodes.forEach((seed) => seed.classList.remove("is-collided", "is-finished"));
+        scoreNodes.forEach((score) => {
+          score.classList.add("is-score-pending");
+          score.classList.remove("is-score-revealed");
+          score.setAttribute("aria-hidden", "true");
+        });
+        routeLines.forEach((lines) => lines.forEach((line) => line?.classList.remove("is-collided")));
+      }
+
+      function tick(now) {
+        if (startTime === null) startTime = now;
+        const elapsed = now - startTime - raceStartDelay;
+        movingLights.forEach(({ trace, spark, length, segments, fadeAt, endTime, seed }) => {
+          let distance = 0;
+          for (const segment of segments) {
+            if (elapsed < segment.start) break;
+            if (elapsed >= segment.end) distance = segment.to;
+            else {
+              distance = segment.from + (segment.to - segment.from) *
+                (elapsed - segment.start) / (segment.end - segment.start);
+              break;
+            }
+          }
+          const faded = fadeAt === null ? 0 :
+            Math.min(1, Math.max(0, (elapsed - fadeAt) / fadeDuration));
+          const visible = elapsed >= 0 && distance > 0;
+          trace.style.strokeDashoffset = String(length - distance);
+          trace.style.opacity = visible ? String(1 - faded) : "0";
+          const point = trace.getPointAtLength(Math.max(0, Math.min(length, distance)));
+          spark.setAttribute("cx", String(point.x));
+          spark.setAttribute("cy", String(point.y));
+          // 先抵達的光點停在交會處等待，直到對手真正碰上才會離開。
+          spark.style.opacity = visible && elapsed <= endTime &&
+            faded < 1 ? "1" : "0";
+          if (seed && fadeAt !== null && elapsed >= fadeAt) seed.classList.add("is-collided");
+          if (seed && fadeAt === null &&
+            elapsed >= segments[segments.length - 1].end) seed.classList.add("is-finished");
+        });
+        race.meetings.forEach((encounter, number) => {
+          if (elapsed >= encounter) revealScore(number);
+        });
+        if (elapsed < lastEvent + 50 && (!fold || fold.open)) {
+          frameId = window.setTimeout(() => tick(window.performance.now()), 30);
+        } else frameId = null;
+      }
+
+      const startWhenExpanded = () => {
+        reset();
+        if (fold && !fold.open) return;
+        if (reduceMotion.matches) {
+          race.meetings.forEach((_, number) => revealScore(number));
+          movingLights.forEach(({ seed, fadeAt }) =>
+            seed?.classList.add(fadeAt === null ? "is-finished" : "is-collided"));
+          return;
+        }
+        frameId = window.setTimeout(() => tick(window.performance.now()), 0);
+      };
+      if (fold?.open) startWhenExpanded();
+      fold?.addEventListener("toggle", startWhenExpanded);
+      const cleanupZoom = slot.__cleanupBracketZoom;
+      slot.__cleanupBracketZoom = () => {
+        fold?.removeEventListener("toggle", startWhenExpanded);
+        reset();
+        cleanupZoom?.();
+      };
+    }
   }
 
   function renderDraw(key, root) {

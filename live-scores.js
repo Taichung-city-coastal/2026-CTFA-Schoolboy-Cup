@@ -80,6 +80,29 @@
     return true;
   }
 
+  function matchKey(match) {
+    return match.match || [match.date, match.time, match.teamA, match.teamB].join("|");
+  }
+
+  function scoreSnapshot(rows) {
+    const snapshot = new Map();
+    let date = "";
+    rows.slice(1).forEach((cols) => {
+      if (cols.length < 7) return;
+      if (String(cols[0] || "").trim()) date = String(cols[0]).trim();
+      const match = {
+        date,
+        time: normalizeTime(cols[1]),
+        match: normalizeMatch(cols[3]),
+        teamA: displayTeamName(cols[4]),
+        teamB: displayTeamName(cols[6])
+      };
+      if (!match.teamA && !match.teamB) return;
+      snapshot.set(matchKey(match), normalizeScore(cols[5]));
+    });
+    return snapshot;
+  }
+
   function tableToRows(table) {
     const cols = Array.isArray(table && table.cols) ? table.cols : [];
     const body = Array.isArray(table && table.rows) ? table.rows : [];
@@ -158,10 +181,12 @@
     });
   }
 
-  function buildSchedule(rows, searchText) {
+  function buildSchedule(rows, searchText, animation = {}) {
     const fragment = document.createDocumentFragment();
     const search = normalizeTeamSearch(searchText);
     const summary = { total: 0, matched: 0 };
+    let visibleRows = 0;
+    let visibleDays = 0;
     if (rows.length < 2) {
       const empty = document.createElement("div");
       empty.className = "score-empty";
@@ -207,6 +232,11 @@
     groups.forEach((matches, date) => {
       const day = document.createElement("section");
       day.className = "score-day";
+      if (animation.entrance && visibleDays < 6) {
+        day.classList.add("score-day-enter");
+        day.style.setProperty("--score-enter-delay", Math.min(visibleDays * 85, 340) + "ms");
+      }
+      visibleDays += 1;
 
       const title = document.createElement("h3");
       title.textContent = date || "比賽日";
@@ -218,6 +248,12 @@
       matches.forEach((match) => {
         const card = document.createElement("article");
         card.className = "score-row";
+        if (animation.entrance && visibleRows < 14) {
+          card.classList.add("score-row-enter");
+          card.style.setProperty("--score-enter-delay", Math.min(visibleRows * 45, 360) + "ms");
+        }
+        if (animation.updatedKeys?.has(matchKey(match))) card.classList.add("is-score-updated");
+        visibleRows += 1;
 
         const meta = document.createElement("div");
         meta.className = "score-meta";
@@ -299,10 +335,13 @@
     let selectedCategory = "";
     let selectedAge = "";
     let latestRows = null;
+    let displayedSourceKey = "";
+    let displayedSignature = "";
+    const previousScores = new Map();
 
-    function renderSchedule() {
+    function renderSchedule(animation = {}) {
       if (!latestRows) return;
-      const { fragment, summary } = buildSchedule(latestRows, searchInput.value);
+      const { fragment, summary } = buildSchedule(latestRows, searchInput.value, animation);
       output.replaceChildren(fragment);
       searchCount.textContent = searchInput.value.trim()
         ? "找到 " + summary.matched + " 場符合的比賽"
@@ -311,12 +350,14 @@
 
     function resetSearch() {
       latestRows = null;
+      displayedSourceKey = "";
+      displayedSignature = "";
       searchInput.value = "";
       searchCount.textContent = "";
       searchWrap.hidden = true;
     }
 
-    searchInput.addEventListener("input", renderSchedule);
+    searchInput.addEventListener("input", () => renderSchedule());
 
     function findSource() {
       return SCORE_CONFIG.sources.find((source) =>
@@ -336,6 +377,13 @@
       const prompt = document.createElement("div");
       prompt.className = "score-empty score-prompt";
       prompt.textContent = text;
+      if (text.includes("載入中")) {
+        prompt.classList.add("is-score-loading");
+        const indicator = document.createElement("span");
+        indicator.className = "score-loading-indicator";
+        indicator.setAttribute("aria-hidden", "true");
+        prompt.prepend(indicator);
+      }
       output.replaceChildren(prompt);
     }
 
@@ -345,13 +393,30 @@
       if (!source) return;
       const requestId = ++activeRequestId;
       updating = true;
+      stamp?.classList.add("is-fetching");
       if (stamp) stamp.textContent = "更新中";
 
       try {
         const rows = await loadSheet(source);
         if (requestId !== activeRequestId) return;
+        const signature = JSON.stringify(rows);
+        const firstDisplay = displayedSourceKey !== source.key;
+        const prior = previousScores.get(source.key);
+        const next = scoreSnapshot(rows);
+        const updatedKeys = new Set();
+        if (!firstDisplay && prior) {
+          next.forEach((score, key) => {
+            if (prior.has(key) && prior.get(key) !== score) updatedKeys.add(key);
+          });
+        }
+        previousScores.set(source.key, next);
         latestRows = rows;
-        renderSchedule();
+        // 資料沒有變化時避免整批卡片重建及動畫反覆播放。
+        if (firstDisplay || displayedSignature !== signature) {
+          renderSchedule({ entrance: firstDisplay, updatedKeys });
+          displayedSourceKey = source.key;
+          displayedSignature = signature;
+        }
         document.dispatchEvent(new CustomEvent("schoolboy:scores-updated", {
           detail: { key: source.key, rows: rows }
         }));
@@ -366,7 +431,10 @@
         }
         if (stamp) stamp.textContent = "更新失敗";
       } finally {
-        if (requestId === activeRequestId) updating = false;
+        if (requestId === activeRequestId) {
+          updating = false;
+          stamp?.classList.remove("is-fetching");
+        }
       }
     }
 
@@ -384,7 +452,10 @@
         if (current) current.textContent = button.querySelector("span").textContent + " · 請選擇歲組";
         if (stamp) stamp.textContent = "";
         showPrompt("請選擇四年級、五年級或六年級。");
-        ageStep.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        ageStep.scrollIntoView({
+          behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+          block: "nearest"
+        });
       });
     });
 
