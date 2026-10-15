@@ -1082,6 +1082,8 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .score-core strong { font-size: 14px; }
 .score-core strong:first-child { text-align: right; }
 .score-core strong:last-child { text-align: left; }
+.score-core.is-bye { display: flex; justify-content: center; }
+.score-core.is-bye strong:first-child { color: var(--event-yellow); text-align: center; font-size: 17px; }
 .score-value { min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 3px; text-align: center; }
 .score-core .score-value b { color: var(--event-yellow); font-family:"Outfit",sans-serif; font-size: 23px; line-height: 1.15; }
 .score-pk { color: rgba(255,255,255,.9); font-family:"Outfit",sans-serif; font-size: 12px; font-weight: 800; line-height: 1.2; white-space: nowrap; }

@@ -13,18 +13,17 @@
         ["D", "台中市明道普霖斯頓小學", "臺中市永隆國小", "彰化縣南郭國小", "大成鵟鷹足球隊U10"],
         ["E", "南屯國小", "彰化縣鹿東國小", "臺中市西屯國小", "彰化縣永靖國小"]
       ],
-      extra: {
-        visible: false,
-        label: "學校女子四年級組",
-        note: "PDF 的女子四年級 A 組僅標示隊伍 1～4，未列出隊伍名稱。",
-        groups: [["A", "隊伍 1", "隊伍 2", "隊伍 3", "隊伍 4"]]
-      },
       rounds: [
         { label: "首輪", matches: [[22, "B2", "C2"], [23, "A2", "D2"]] },
-        { label: "八強", matches: [[24, "A1", "D1"], [26, "E1", "勝 22"], [27, "勝 23", "C1"], [25, "B1", "E2"]] },
+        { label: "八強", matches: [[24, "A1", "D1"], [26, "E1", "勝 22"], [27, "C1", "勝 23"], [25, "B1", "E2"]] },
         { label: "準決賽", matches: [[28, "勝 24", "勝 26"], [29, "勝 27", "勝 25"]] },
         { label: "名次賽", matches: [[30, "敗 28", "敗 29", "季軍戰"], [31, "勝 28", "勝 29", "冠軍戰"]] }
       ]
+    },
+    "school-girls-4": {
+      label: "學校女子四年級組",
+      groups: [["A", "彰化縣東芳國小", "臺中市黎明國小女子足球隊", "臺中市永順國小", "國安國小"]],
+      rounds: []
     },
     "school-5": {
       label: "學校男子五年級組",
@@ -64,7 +63,7 @@
         ["B", "小蜻蜓", "苗栗海洋", "旅人"],
         ["C", "足夢東海 U10", "山海屯U10", "肯尼獅足球俱樂部"],
         ["D", "ORIGINAL FC", "台中 FUTURO U10黃", "足夢蜻蜓"],
-        ["E", "閃電豹足球俱樂部", "國安火焰獅", "新屋足球俱樂部"],
+        ["E", "閃電豹足球俱樂部", "國安火焰獅", "缺"],
         ["F", "U-kicker U9", "U-kicker U10", "台中 FUTURO U10藍"],
         ["G", "夢幻熱血", "山海屯U9", "DSE Football Club", "平原足球PYFC"]
       ],
@@ -80,7 +79,7 @@
       groups: [
         ["A", "平原足球PYFC", "台中磐石", "台中艾拓綠茵"],
         ["B", "足夢東海 U11", "台中 FUTURO U11", "山海屯"],
-        ["C", "旅人", "新屋足球俱樂部", "灣島黑狼U11", "皇家野馬"]
+        ["C", "旅人", "缺", "灣島黑狼U11", "皇家野馬"]
       ],
       rounds: [
         { label: "首輪", matches: [[13, "B1", "C2"], [14, "B2", "A2"]] },
@@ -107,12 +106,31 @@
   // 對應 PDF 各小組的小組賽場次；全組完成後依積分與同分規則判定 A1 / A2。
   const GROUP_GAME_IDS = {
     "school-4": [[1, 8, 15], [2, 9, 16], [3, 10, 17], [4, 5, 11, 12, 18, 19], [6, 7, 13, 14, 20, 21]],
+    "school-girls-4": [[1, 2, 3, 4, 5, 6]],
     "school-5": [[1, 4, 7], [2, 5, 8], [3, 6, 9]],
     "school-6": [[1, 8, 15], [2, 9, 16], [3, 10, 17], [4, 11, 18], [5, 12, 19], [6, 13, 20], [7, 14, 21]],
     "open-4": [[1, 9, 17], [2, 10, 18], [3, 11, 19], [4, 12, 20], [5, 13, 21], [6, 14, 22], [7, 8, 15, 16, 23, 24]],
     "open-5": [[1, 5, 9], [2, 6, 10], [3, 4, 7, 8, 11, 12]],
     "open-6": [[1, 6, 11], [2, 7, 12], [3, 8, 13], [4, 5, 9, 10, 14, 15]]
   };
+
+  // 最新 PDF 的「輪空」場次沒有對手與比分；直接以 3:0 計入正式排名。
+  // 陣列位置對應該組圖四角的隊伍索引，第一項為輪空獲勝者。
+  const WALKOVERS = {
+    "open-4": { 13: [4, 0, 2], 21: [4, 1, 2] },
+    "open-5": { 3: [2, 0, 1], 8: [2, 3, 1], 12: [2, 2, 1] }
+  };
+
+  function officialGame(key, draw, results, groupIndex, id) {
+    const bye = WALKOVERS[key]?.[id];
+    if (!bye || bye[0] !== groupIndex) return results.get(id);
+    const teams = draw.groups[groupIndex];
+    return {
+      teams: [teams[bye[1] + 1], teams[bye[2] + 1]],
+      result: { goals: [3, 0], penalties: null, winnerSide: 0, label: "3:0" },
+      walkover: true
+    };
+  }
 
   // 預留公平競賽積分的權威資料（第六排序條件）。
   // 格式：FAIR_PLAY_POINTS["school-4"]["A"]["正式隊名"] = 分數；
@@ -144,20 +162,22 @@
   }
 
   // 每條線依序記錄 PDF 的對戰隊伍，以及場次與兩端各自比分的位置。
+  // 四角形的上、下、左、右四條外框邊，比分放在框外；只有兩條交叉線的比分留在框內。
+  // 外框外的比分仍按對戰線兩端排列，PK 顯示接在各自的比分下方。
   // scores[0] 一定靠近 teams[0]、scores[1] 一定靠近 teams[1]。
   const GROUP_EDGES = {
     3: [
-      { teams: [0, 1], label: [38, 71], scores: [[76, 38], [38, 114]] },
-      { teams: [0, 2], label: [164, 71], scores: [[124, 38], [162, 114]] },
-      { teams: [1, 2], label: [100, 152], scores: [[55, 132], [145, 132]] }
+      { teams: [0, 1], label: [38, 71], scores: [[73, 44], [42, 108]] },
+      { teams: [0, 2], label: [164, 71], scores: [[127, 44], [158, 108]] },
+      { teams: [1, 2], label: [100, 152], scores: [[64, 132], [136, 132]] }
     ],
     4: [
-      { teams: [0, 1], label: [100, 9], scores: [[77, 26], [123, 26]] },
-      { teams: [2, 3], label: [100, 152], scores: [[77, 120], [123, 120]] },
-      { teams: [0, 2], label: [13, 78], scores: [[24, 39], [24, 115]] },
-      { teams: [1, 3], label: [188, 78], scores: [[176, 39], [176, 115]] },
-      { teams: [0, 3], label: [73, 62], scores: [[52, 33], [150, 112]] },
-      { teams: [1, 2], label: [128, 62], scores: [[148, 33], [50, 112]] }
+      { teams: [0, 1], label: [100, 9], scores: [[70, -5], [130, -5]] },
+      { teams: [2, 3], label: [100, 152], scores: [[70, 149], [130, 149]] },
+      { teams: [0, 2], label: [13, 78], scores: [[8, 47], [8, 106]] },
+      { teams: [1, 3], label: [188, 78], scores: [[192, 47], [192, 106]] },
+      { teams: [0, 3], label: [73, 62], scores: [[59, 39], [143, 106]] },
+      { teams: [1, 2], label: [128, 62], scores: [[141, 39], [57, 106]] }
     ]
   };
 
@@ -243,6 +263,7 @@
   function parseResult(input) {
     const cleaned = String(input == null ? "" : input).normalize("NFKC")
       .replace(/[：﹕∶]/g, ":")
+      .replace(/[－—–-]/g, ":")
       .replace(/（/g, "(").replace(/）/g, ")")
       .replace(/點球大戰|點球|十二碼|点球/g, "PK")
       .toUpperCase().replace(/P\s*\.?\s*K\.?/g, "PK")
@@ -339,7 +360,7 @@
       }));
       const games = GROUP_GAME_IDS[key]?.[groupIndex] || [];
       for (const id of games) {
-        const info = results.get(id);
+        const info = officialGame(key, draw, results, groupIndex, id);
         if (!info?.result) continue;
         const positions = info.teams.map((name) => teamSlot(draw, groupIndex, name));
         if (positions.some((i) => i < 0) || positions[0] === positions[1]) continue;
@@ -417,7 +438,7 @@
     const pairs = new Set();
     const games = [];
     for (const id of gameIds) {
-      const game = results.get(id);
+      const game = officialGame(key, draw, results, groupIndex, id);
       if (!game?.result) return null;
       const sides = game.teams.map((team) => teamSlot(draw, groupIndex, team));
       if (sides.some((side) => side < 0) || sides[0] === sides[1]) return null;
@@ -1162,10 +1183,13 @@
     const groups = collapsible("小組對戰圖", draw.label + " · 點擊查看各組對戰圖", "draw-fold-groups");
     const groupsContent = element("div", "draw-fold-content");
     groupsContent.append(groupSection(draw.label, draw.groups, "", GROUP_GAME_IDS[key]));
-    if (draw.extra && draw.extra.visible) groupsContent.append(groupSection(draw.extra.label, draw.extra.groups, draw.extra.note));
     groups.append(groupsContent);
     root.append(groups);
 
+    if (!draw.rounds.length) {
+      root.hidden = false;
+      return;
+    }
     const knockout = collapsible("淘汰賽對戰圖", "點擊展開完整晉級路線與冠軍戰", "draw-fold-knockout");
     const knockoutContent = element("div", "draw-fold-content");
     knockoutContent.append(element("p", "draw-tree-tip", "圖表可左右捲動查看完整分支。"));
@@ -1218,12 +1242,12 @@
     });
     root.querySelectorAll("[data-group-game]").forEach((marker) => {
       const matchId = Number(marker.getAttribute("data-group-game"));
-      const game = results.get(matchId);
+      const groupIndex = Number(marker.closest(".draw-group-card")?.dataset.groupIndex);
+      const game = officialGame(key, draw, results, groupIndex, matchId);
       const result = game?.result;
       const branches = marker.querySelectorAll("[data-score-side]");
       let sheetSides = null;
       if (result) {
-        const groupIndex = Number(marker.closest(".draw-group-card")?.dataset.groupIndex);
         const gameIndex = GROUP_GAME_IDS[key]?.[groupIndex]?.indexOf(matchId) ?? -1;
         const teamCount = (draw.groups[groupIndex]?.length || 1) - 1;
         const edge = GROUP_EDGES[teamCount]?.[gameIndex];
@@ -1269,18 +1293,15 @@
         root.replaceChildren();
       });
     });
-    app.querySelectorAll("[data-score-age] [data-age]").forEach((button) => {
-      button.addEventListener("click", () => {
-        if (!selectedCategory) return;
-        currentKey = selectedCategory + "-" + button.dataset.age;
-        latestRows = [];
-        lastResultSignature = "";
-        renderDraw(currentKey, root);
-      });
+    document.addEventListener("schoolboy:division-selected", (event) => {
+      currentKey = event.detail.key;
+      latestRows = [];
+      lastResultSignature = "";
+      renderDraw(currentKey, root);
     });
 
     document.addEventListener("schoolboy:scores-updated", (event) => {
-      if (!currentKey || event.detail.key !== currentKey) return;
+      if (!currentKey || !DRAWS[currentKey] || event.detail.key !== currentKey) return;
       const signature = JSON.stringify(event.detail.rows);
       if (signature === lastResultSignature) return;
       lastResultSignature = signature;

@@ -5,12 +5,14 @@
     sheetId: "14591f624JfJuRYGFsku9bpVVHyor8Fxv",
     refreshMs: 30000,
     sources: [
-      { key: "school-4", category: "school", age: "4", categoryLabel: "學校組", ageLabel: "四年級", sheetName: "學校組四年級" },
+      { key: "school-4", category: "school", age: "4", categoryLabel: "學校組", ageLabel: "四年級男子", sheetName: "學校組四年級" },
+      { key: "school-girls-4", category: "school", age: "4", gender: "girls", categoryLabel: "學校組", ageLabel: "四年級女子", sheetName: "學校組四年級女子" },
       { key: "school-5", category: "school", age: "5", categoryLabel: "學校組", ageLabel: "五年級", sheetName: "學校組五年級" },
       { key: "school-6", category: "school", age: "6", categoryLabel: "學校組", ageLabel: "六年級", sheetName: "學校組六年級" },
       { key: "open-4", category: "open", age: "4", categoryLabel: "公開組", ageLabel: "四年級", sheetName: "公開組四年級" },
       { key: "open-5", category: "open", age: "5", categoryLabel: "公開組", ageLabel: "五年級", sheetName: "公開組五年級" },
-      { key: "open-6", category: "open", age: "6", categoryLabel: "公開組", ageLabel: "六年級", sheetName: "公開組六年級" }
+      { key: "open-6", category: "open", age: "6", categoryLabel: "公開組", ageLabel: "六年級男子", sheetName: "公開組六年級" },
+      { key: "open-girls-6", category: "open", age: "6", gender: "girls", categoryLabel: "公開組", ageLabel: "六年級女子", sheetName: "公開組六年級女子" }
     ]
   };
 
@@ -23,6 +25,7 @@
 
   function normalizeScore(value) {
     const score = String(value == null ? "" : value).normalize("NFKC").trim();
+    if (/^(比分|輪空|待定)$/.test(score)) return "VS";
     return score
       ? score.replace(/[：﹕∶]/g, ":")
         .replace(/點球大戰|點球|十二碼|点球/g, "PK")
@@ -181,6 +184,34 @@
     });
   }
 
+  // 賽程以 10/15 PDF 為準：Google 成績表保留了五場舊的「缺」對位。
+  // 在共同資料入口修正，確保即時比分、積分與小組圖使用相同場次。
+  const PDF_WALKOVERS = {
+    "open-4": {
+      13: ["閃電豹足球俱樂部", "缺", "3:0"],
+      21: ["缺", "國安火焰獅", "0:3"]
+    },
+    "open-5": {
+      3: ["旅人", "缺", "3:0"],
+      8: ["缺", "皇家野馬", "0:3"],
+      12: ["缺", "灣島黑狼U11", "0:3"]
+    }
+  };
+
+  function applyOfficialSchedule(source, rows) {
+    const walkovers = PDF_WALKOVERS[source.key];
+    if (!walkovers) return rows;
+    return rows.map((cols, index) => {
+      if (index === 0 || cols.length < 7) return cols;
+      const game = Number(normalizeMatch(cols[3]));
+      const fix = walkovers[game];
+      if (!fix) return cols;
+      const fixed = cols.slice();
+      [fixed[4], fixed[6], fixed[5]] = fix;
+      return fixed;
+    });
+  }
+
   function buildSchedule(rows, searchText, animation = {}) {
     const fragment = document.createDocumentFragment();
     const search = normalizeTeamSearch(searchText);
@@ -274,19 +305,22 @@
         const score = document.createElement("div");
         score.className = "score-value";
         const teamB = document.createElement("strong");
-        teamA.textContent = match.teamA || "待定";
+        const isBye = [match.teamA, match.teamB, match.score].some((text) => /^(?:缺|輪空)$/.test(text));
+        teamA.textContent = isBye ? "輪空" : (match.teamA || "待定");
         const scoreParts = splitScoreForDisplay(match.score);
         const primaryScore = document.createElement("b");
         primaryScore.textContent = scoreParts.main;
-        score.append(primaryScore);
-        if (scoreParts.pk) {
+        if (!isBye) score.append(primaryScore);
+        if (!isBye && scoreParts.pk) {
           const pkScore = document.createElement("span");
           pkScore.className = "score-pk";
           pkScore.textContent = scoreParts.pk;
           score.append(pkScore);
         }
         teamB.textContent = match.teamB || "待定";
-        core.append(teamA, score, teamB);
+        if (isBye) core.classList.add("is-bye");
+        core.append(teamA);
+        if (!isBye) core.append(score, teamB);
 
         card.append(meta, core);
         list.append(card);
@@ -322,6 +356,8 @@
     const categoryContainer = app.querySelector("[data-score-category]");
     const ageContainer = app.querySelector("[data-score-age]");
     const ageStep = app.querySelector("[data-score-age-step]");
+    const genderStep = app.querySelector("[data-score-gender-step]");
+    const genderButtons = Array.from(app.querySelectorAll("[data-gender]"));
     const output = app.querySelector("[data-score-output]");
     const searchWrap = app.querySelector("[data-score-search-wrap]");
     const searchInput = app.querySelector("[data-score-search]");
@@ -334,6 +370,7 @@
     let activeRequestId = 0;
     let selectedCategory = "";
     let selectedAge = "";
+    let selectedGender = "boys";
     let latestRows = null;
     let displayedSourceKey = "";
     let displayedSignature = "";
@@ -361,7 +398,8 @@
 
     function findSource() {
       return SCORE_CONFIG.sources.find((source) =>
-        source.category === selectedCategory && source.age === selectedAge
+        source.category === selectedCategory && source.age === selectedAge &&
+        (source.gender || "boys") === selectedGender
       );
     }
 
@@ -397,7 +435,7 @@
       if (stamp) stamp.textContent = "更新中";
 
       try {
-        const rows = await loadSheet(source);
+        const rows = applyOfficialSchedule(source, await loadSheet(source));
         if (requestId !== activeRequestId) return;
         const signature = JSON.stringify(rows);
         const firstDisplay = displayedSourceKey !== source.key;
@@ -445,10 +483,13 @@
         updating = false;
         selectedCategory = button.dataset.category;
         selectedAge = "";
+        selectedGender = "boys";
         resetSearch();
         setActive(categoryButtons, "category", selectedCategory);
         setActive(ageButtons, "age", selectedAge);
+        setActive(genderButtons, "gender", "");
         ageStep.hidden = false;
+        genderStep.hidden = true;
         if (current) current.textContent = button.querySelector("span").textContent + " · 請選擇歲組";
         if (stamp) stamp.textContent = "";
         showPrompt("請選擇四年級、五年級或六年級。");
@@ -459,21 +500,46 @@
       });
     });
 
+    function chooseSource() {
+      const source = findSource();
+      if (!source) return;
+      searchWrap.hidden = false;
+      if (current) current.textContent = source.categoryLabel + " · " + source.ageLabel;
+      document.dispatchEvent(new CustomEvent("schoolboy:division-selected", { detail: { key: source.key } }));
+      showPrompt("賽程載入中...");
+      refresh(true);
+    }
+
     ageButtons.forEach((button) => {
       button.setAttribute("aria-pressed", "false");
       button.addEventListener("click", () => {
         if (!selectedCategory) return;
+        activeRequestId += 1;
+        updating = false;
+        document.dispatchEvent(new CustomEvent("schoolboy:division-selected", { detail: { key: "" } }));
         selectedAge = button.dataset.age;
+        selectedGender = "boys";
         resetSearch();
         setActive(ageButtons, "age", selectedAge);
-        const source = findSource();
-        if (!source) return;
-        searchWrap.hidden = false;
-        if (current) current.textContent = source.categoryLabel + " · " + source.ageLabel;
-        showPrompt("賽程載入中...");
-        refresh(true);
+        setActive(genderButtons, "gender", "");
+        const hasGirls = SCORE_CONFIG.sources.some((source) =>
+          source.category === selectedCategory && source.age === selectedAge && source.gender === "girls");
+        genderStep.hidden = !hasGirls;
+        if (hasGirls) {
+          selectedGender = "";
+          showPrompt("請選擇男子組或女子組。");
+          genderStep.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        } else chooseSource();
       });
     });
+
+    genderButtons.forEach((button) => button.addEventListener("click", () => {
+      if (!selectedAge) return;
+      selectedGender = button.dataset.gender;
+      resetSearch();
+      setActive(genderButtons, "gender", selectedGender);
+      chooseSource();
+    }));
 
     showPrompt("請先選擇學校組或公開組。");
 
