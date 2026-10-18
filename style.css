@@ -506,6 +506,27 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .notice-card time { color: var(--event-yellow); font-family: "Outfit",sans-serif; font-weight: 800; }
 .notice-card h2 { margin: 0; font-size: 18px; line-height: 1.5; }
 .notice-card p { margin: 5px 0 0; color: rgba(255,255,255,.52); font-size: 12px; }
+.notice-schedule {
+  display: grid;
+  gap: 8px;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.notice-schedule li {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(68px, .55fr) minmax(0, .8fr);
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid rgba(142,200,255,.17);
+  border-radius: 10px;
+  background: rgba(8,30,68,.46);
+  font-size: 13px;
+}
+.notice-schedule-date { color: rgba(255,255,255,.82); font-weight: 700; }
+.notice-schedule-field { color: var(--event-yellow); font-weight: 900; white-space: nowrap; }
+.notice-schedule-group { color: #fff; font-weight: 700; }
 .notice-card a { color: var(--event-yellow); text-decoration: none; font-weight: 800; font-size: 13px; }
 .notice-card > a::before,
 .notice-card > .notice-open-dialog::before {
@@ -1674,6 +1695,8 @@ button, a { -webkit-tap-highlight-color: transparent; }
   .page-hero h1 { font-size: clamp(2.8rem, 15vw, 4.6rem); }
   .notice-card { padding: 20px; }
   .notice-card h2 { font-size: 16px; }
+  .notice-schedule li { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; }
+  .notice-schedule-group { grid-column: 1 / -1; }
   .notice-card a { font-size: 0; }
   .notice-card a::after { content: "↗"; font-size: 18px; }
   .schedule-dialog-panel { padding: 32px 21px 26px; }

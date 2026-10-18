@@ -20,43 +20,8 @@
     </header>
 
     <section class="page-content">
-      <div class="notice-list">
-        <article class="notice-card" data-reveal>
-          <time datetime="2026-10-12">2026.10.12</time>
-          <div>
-            <span class="status-pill">賽程公告</span>
-            <h2>2026 中區預賽賽程</h2>
-            <p>學校組、公開組四至六年級賽程已公布。</p>
-          </div>
-          <a href="live-scores.html">查看賽程 ↗</a>
-        </article>
-        <article class="notice-card notice-card-interactive" data-open-east-schedule data-reveal data-reveal-delay="60">
-          <time datetime="2026-10-15">2026.10.15</time>
-          <div>
-            <span class="status-pill">賽程公告</span>
-            <h2>東區賽程</h2>
-            <p>2026 全國學童盃足球錦標賽東區預賽賽程已提供，點擊公告即可查看完整賽程 PDF。請參賽球隊留意比賽時間、場地與場次資訊；如有調整，以大會最新公告為準。</p>
-          </div>
-          <button class="notice-open-dialog" type="button" aria-haspopup="dialog" aria-controls="east-schedule-dialog">查看賽程 ↗</button>
-        </article>
-        <article class="notice-card notice-card-interactive" data-open-south-schedule data-reveal data-reveal-delay="60">
-          <time datetime="2026-10-14">2026.10.14</time>
-          <div>
-            <span class="status-pill">賽程公告</span>
-            <h2>南區賽程</h2>
-            <p>2026 全國學童盃足球錦標賽南區預賽賽程資料已提供，請依參賽組別選擇「公開組」或「學校組」查看完整賽程 PDF。各場次時間、場地及後續異動，請以大會最新公告為準。</p>
-          </div>
-          <button class="notice-open-dialog" type="button" aria-haspopup="dialog" aria-controls="south-schedule-dialog">選擇組別 ↗</button>
-        </article>
-        <article class="notice-card" data-reveal data-reveal-delay="80">
-          <time datetime="2026-09-23">2026.09.23</time>
-          <div>
-            <span class="status-pill">競賽規程</span>
-            <h2>2026 全國學童盃足球錦標賽競賽規程（草案）暨報名資訊公告</h2>
-            <p>包含分區、日期、場地、報名方式、組別與參賽資格。</p>
-          </div>
-          <a href="https://www.ctfa.com.tw/index.php?Itemid=7675&id=8489&option=com_content&view=article" target="_blank" rel="noopener noreferrer">官方公告 ↗</a>
-        </article>
+      <div class="notice-list" data-announcements aria-live="polite">
+        <p class="notice-state">公告載入中…</p>
       </div>
     </section>
   </main>
@@ -96,6 +61,7 @@
   </dialog>
   <script src="toolbar.js"></script>
   <script src="app.js"></script>
+  <script src="announcements-data.js"></script>
   <script src="announcements.js"></script>
 </body>
 </html>
