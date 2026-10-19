@@ -505,7 +505,7 @@ button, a { -webkit-tap-highlight-color: transparent; }
 }
 .notice-card time { color: var(--event-yellow); font-family: "Outfit",sans-serif; font-weight: 800; }
 .notice-card h2 { margin: 0; font-size: 18px; line-height: 1.5; }
-.notice-card p { margin: 5px 0 0; color: rgba(255,255,255,.52); font-size: 12px; }
+.notice-card p { margin: 5px 0 0; color: rgba(255,255,255,.52); font-size: 12px; white-space: pre-line; }
 .notice-schedule {
   display: grid;
   gap: 8px;
