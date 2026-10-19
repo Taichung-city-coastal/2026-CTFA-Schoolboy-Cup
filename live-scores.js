@@ -5,14 +5,14 @@
     sheetId: "14591f624JfJuRYGFsku9bpVVHyor8Fxv",
     refreshMs: 30000,
     sources: [
-      { key: "school-4", category: "school", age: "4", categoryLabel: "學校組", ageLabel: "四年級男子", sheetName: "學校組四年級" },
-      { key: "school-girls-4", category: "school", age: "4", gender: "girls", categoryLabel: "學校組", ageLabel: "四年級女子", sheetName: "學校組四年級女子" },
-      { key: "school-5", category: "school", age: "5", categoryLabel: "學校組", ageLabel: "五年級", sheetName: "學校組五年級" },
-      { key: "school-6", category: "school", age: "6", categoryLabel: "學校組", ageLabel: "六年級", sheetName: "學校組六年級" },
-      { key: "open-4", category: "open", age: "4", categoryLabel: "公開組", ageLabel: "四年級", sheetName: "公開組四年級" },
-      { key: "open-5", category: "open", age: "5", categoryLabel: "公開組", ageLabel: "五年級", sheetName: "公開組五年級" },
-      { key: "open-6", category: "open", age: "6", categoryLabel: "公開組", ageLabel: "六年級男子", sheetName: "公開組六年級" },
-      { key: "open-girls-6", category: "open", age: "6", gender: "girls", categoryLabel: "公開組", ageLabel: "六年級女子", sheetName: "公開組六年級女子" }
+      { key: "school-4", category: "school", age: "4", categoryLabel: "學校組", ageLabel: "四年級男子", sheetName: "學校組四年級", gid: 470652712 },
+      { key: "school-girls-4", category: "school", age: "4", gender: "girls", categoryLabel: "學校組", ageLabel: "四年級女子", sheetName: "學校組四年級女子", gid: 1072739471 },
+      { key: "school-5", category: "school", age: "5", categoryLabel: "學校組", ageLabel: "五年級", sheetName: "學校組五年級", gid: 343709723 },
+      { key: "school-6", category: "school", age: "6", categoryLabel: "學校組", ageLabel: "六年級", sheetName: "學校組六年級", gid: 733195883 },
+      { key: "open-4", category: "open", age: "4", categoryLabel: "公開組", ageLabel: "四年級", sheetName: "公開組四年級", gid: 738153370 },
+      { key: "open-5", category: "open", age: "5", categoryLabel: "公開組", ageLabel: "五年級", sheetName: "公開組五年級", gid: 2040397409 },
+      { key: "open-6", category: "open", age: "6", categoryLabel: "公開組", ageLabel: "六年級男子", sheetName: "公開組六年級", gid: 128038464 },
+      { key: "open-girls-6", category: "open", age: "6", gender: "girls", categoryLabel: "公開組", ageLabel: "六年級女子", sheetName: "公開組六年級女子", gid: 166882617 }
     ]
   };
 
@@ -124,7 +124,65 @@
     return [headers, ...rows];
   }
 
-  function loadSheet(source) {
+  // gviz 會以整欄推斷資料型別，當比分欄混用「0:11」及「0 ： 9」時，
+  // 會誤判成時間欄、把文字比分置成 null。使用指定 gid 的原始 CSV 可保留所有比分。
+  // 必須指定 gid；Google export 的 sheet=名稱參數會被忽略並永遠匯出第一張工作表。
+  function parseCsvRows(text) {
+    const rows = [];
+    let row = [];
+    let cell = "";
+    let quoted = false;
+    const input = String(text || "").replace(/^\uFEFF/, "");
+    function finishCell() {
+      row.push(cell);
+      cell = "";
+    }
+    function finishRow() {
+      finishCell();
+      rows.push(row);
+      row = [];
+    }
+    for (let i = 0; i < input.length; i++) {
+      const char = input[i];
+      if (quoted) {
+        if (char === '"') {
+          if (input[i + 1] === '"') {
+            cell += '"';
+            i += 1;
+          } else quoted = false;
+        } else cell += char;
+      } else if (char === '"') quoted = true;
+      else if (char === ",") finishCell();
+      else if (char === "\n" || char === "\r") {
+        finishRow();
+        if (char === "\r" && input[i + 1] === "\n") i += 1;
+      } else cell += char;
+    }
+    if (quoted) throw new Error("incomplete CSV response");
+    if (row.length || cell) finishRow();
+    return rows;
+  }
+
+  async function loadSheetCsv(source) {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 12000);
+    try {
+      const url = "https://docs.google.com/spreadsheets/d/" +
+        encodeURIComponent(SCORE_CONFIG.sheetId) + "/export?format=csv&gid=" +
+        encodeURIComponent(source.gid) + "&t=" + Date.now();
+      const response = await fetch(url, { cache: "no-store", signal: controller.signal });
+      if (!response.ok) throw new Error("CSV request failed: " + response.status);
+      const rows = parseCsvRows(await response.text());
+      if (rows.length < 2 || rows[0].length < 7 || String(rows[0][3]).trim() !== "場次") {
+        throw new Error("invalid CSV response");
+      }
+      return rows;
+    } finally {
+      window.clearTimeout(timeout);
+    }
+  }
+
+  function loadSheetGviz(source) {
     return new Promise((resolve, reject) => {
       const callbackName = "__schoolboyScoreCallback" + (++requestSequence);
       const script = document.createElement("script");
@@ -182,6 +240,16 @@
 
       document.head.append(script);
     });
+  }
+
+  async function loadSheet(source) {
+    try {
+      return await loadSheetCsv(source);
+    } catch (error) {
+      // 若 Google CSV 服務暫時失效，才使用原本可跨網域載入的 JSONP 備援。
+      console.warn("Google CSV 成績讀取失敗，改用 gviz 備援：", source.sheetName, error);
+      return loadSheetGviz(source);
+    }
   }
 
   // 賽程以 10/15 PDF 為準：Google 成績表保留了五場舊的「缺」對位。
