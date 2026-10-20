@@ -162,8 +162,8 @@
   }
 
   // 每條線依序記錄 PDF 的對戰隊伍，以及場次與兩端各自比分的位置。
-  // 四角形的上、下、左、右四條外框邊，比分放在框外；只有兩條交叉線的比分留在框內。
-  // 外框外的比分仍按對戰線兩端排列，PK 顯示接在各自的比分下方。
+  // 四角形的六條對戰線都將比分置於線上，避免外框外的數字被隊伍卡片遮住。
+  // 底邊的 PK 往框內（比分上方）排列，以免再次碰到下方的隊伍卡片。
   // scores[0] 一定靠近 teams[0]、scores[1] 一定靠近 teams[1]。
   const GROUP_EDGES = {
     3: [
@@ -172,10 +172,10 @@
       { teams: [1, 2], label: [100, 152], scores: [[64, 132], [136, 132]] }
     ],
     4: [
-      { teams: [0, 1], label: [100, 9], scores: [[70, -5], [130, -5]] },
-      { teams: [2, 3], label: [100, 152], scores: [[70, 149], [130, 149]] },
-      { teams: [0, 2], label: [13, 78], scores: [[8, 47], [8, 106]] },
-      { teams: [1, 3], label: [188, 78], scores: [[192, 47], [192, 106]] },
+      { teams: [0, 1], label: [100, 9], scores: [[70, 16], [130, 16]] },
+      { teams: [2, 3], label: [100, 152], scores: [[70, 141], [130, 141]], pkOffset: -17 },
+      { teams: [0, 2], label: [13, 78], scores: [[24, 51], [24, 110]] },
+      { teams: [1, 3], label: [188, 78], scores: [[176, 51], [176, 110]] },
       { teams: [0, 3], label: [73, 62], scores: [[59, 39], [143, 106]] },
       { teams: [1, 2], label: [128, 62], scores: [[141, 39], [57, 106]] }
     ]
@@ -223,7 +223,7 @@
         const branch = document.createElementNS("http://www.w3.org/2000/svg", "g");
         branch.setAttribute("data-score-side", String(side));
         svgText(branch, sx, sy, "draw-group-match-score", "");
-        svgText(branch, sx, sy + 12, "draw-group-match-pk", "");
+        svgText(branch, sx, sy + (edge.pkOffset ?? 12), "draw-group-match-pk", "");
         marker.append(branch);
       });
       svg.append(marker);

@@ -1235,11 +1235,26 @@ button, a { -webkit-tap-highlight-color: transparent; }
   transform: translateX(-50%);
   overflow: visible;
 }
-.draw-group-figure--4 { height: 310px; }
+.draw-group-figure--4 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: auto 201px auto;
+  column-gap: 12px;
+  row-gap: 10px;
+  height: auto;
+  padding: 6px 1% 4px;
+  align-items: start;
+}
 .draw-group-figure--4 svg {
-  top: 64px;
+  position: relative;
+  grid-column: 1 / -1;
+  grid-row: 2;
+  justify-self: center;
+  top: auto;
+  left: auto;
   width: min(260px,80%);
   height: 201px;
+  transform: none;
 }
 .draw-group-outline { fill: rgba(48,135,248,.095); stroke: rgba(128,196,255,.98); stroke-width: 3.2; stroke-linejoin: round; }
 .draw-group-diagonal { stroke: rgba(128,196,255,.74); stroke-width: 2.6; }
@@ -1315,17 +1330,22 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .draw-group-card.is-complete .draw-group-figure--3 svg { top: 85px; }
 .draw-group-card.is-complete .draw-group-figure--3 .draw-group-team--bottom-left,
 .draw-group-card.is-complete .draw-group-figure--3 .draw-group-team--bottom-right { top: 245px; }
-.draw-group-card.is-complete .draw-group-figure--4 { height: 345px; }
-.draw-group-card.is-complete .draw-group-figure--4 svg { top: 90px; }
-.draw-group-card.is-complete .draw-group-figure--4 .draw-group-team--bottom-left,
-.draw-group-card.is-complete .draw-group-figure--4 .draw-group-team--bottom-right { top: 282px; }
+.draw-group-figure--4 .draw-group-team {
+  position: relative;
+  top: auto;
+  left: auto;
+  right: auto;
+  width: 100%;
+  max-width: none;
+  transform: none;
+}
 .draw-group-figure--3 .draw-group-team--top { left: 50%; top: 1px; transform: translateX(-50%); }
 .draw-group-figure--3 .draw-group-team--bottom-left { left: 1%; top: 215px; }
 .draw-group-figure--3 .draw-group-team--bottom-right { right: 1%; top: 215px; }
-.draw-group-figure--4 .draw-group-team--top-left { left: 1%; top: 6px; }
-.draw-group-figure--4 .draw-group-team--top-right { right: 1%; top: 6px; }
-.draw-group-figure--4 .draw-group-team--bottom-left { left: 1%; top: 255px; }
-.draw-group-figure--4 .draw-group-team--bottom-right { right: 1%; top: 255px; }
+.draw-group-figure--4 .draw-group-team--top-left { grid-column: 1; grid-row: 1; }
+.draw-group-figure--4 .draw-group-team--top-right { grid-column: 2; grid-row: 1; }
+.draw-group-figure--4 .draw-group-team--bottom-left { grid-column: 1; grid-row: 3; }
+.draw-group-figure--4 .draw-group-team--bottom-right { grid-column: 2; grid-row: 3; }
 .draw-tree-tip { margin: 0 0 12px; color: rgba(255,255,255,.55); font-size: 11px; }
 .draw-zoom-toolbar {
   display: flex;
@@ -1730,6 +1750,7 @@ button, a { -webkit-tap-highlight-color: transparent; }
   .score-draws { gap: 10px; }
   .draw-group-card { padding: 13px 10px 8px; }
   .draw-group-figure { height: 272px; }
+  .draw-group-figure--4 { height: auto; }
   .draw-group-team { font-size: 11px; padding: 6px; }
   .draw-fold-summary { padding: 15px; min-height: 69px; }
   .draw-fold-summary-label strong { font-size: 16px; }
