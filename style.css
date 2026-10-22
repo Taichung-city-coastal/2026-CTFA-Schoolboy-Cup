@@ -506,6 +506,9 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .notice-card time { color: var(--event-yellow); font-family: "Outfit",sans-serif; font-weight: 800; }
 .notice-card h2 { margin: 0; font-size: 18px; line-height: 1.5; }
 .notice-card p { margin: 5px 0 0; color: rgba(255,255,255,.52); font-size: 12px; white-space: pre-line; }
+.notice-card-urgent { border-color: rgba(255,208,86,.55); background: linear-gradient(135deg, rgba(211,85,32,.16), rgba(255,255,255,.045)); }
+.notice-card-urgent h2 { color: var(--event-yellow); }
+.notice-card-urgent p { color: rgba(255,255,255,.94); font-size: 14px; line-height: 1.85; }
 .notice-schedule {
   display: grid;
   gap: 8px;

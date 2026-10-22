@@ -78,6 +78,7 @@
     if (!data || typeof data.title !== "string" || !data.title.trim()) return null;
     const action = data.action || {};
     const card = element("article", "notice-card");
+    if (data.category === "緊急公告") card.classList.add("notice-card-urgent");
     const time = element("time", "", String(data.date || "").replace(/-/g, "."));
     time.dateTime = String(data.date || "");
     const details = element("div");
