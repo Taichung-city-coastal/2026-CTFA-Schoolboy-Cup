@@ -321,7 +321,21 @@
 
   function usableName(label) {
     const text = String(label || "").trim();
-    return text && !/^(?:待定|未定|VS|[-—]|\d+)$/.test(text) ? text : "";
+    if (!text || /^(?:待定|未定|VS|[-—]|\d+)$/.test(text)) return "";
+
+    // 只有「B1」「勝 28」「(28)勝」等籤位代碼時，不能把它當正式隊名。
+    const seed = normalizedSeed(text);
+    if (/^(?:[A-G][1-4]|(?:勝|敗)\d+)$/i.test(seed)) return "";
+
+    // 淘汰賽試算表會把來源籤位一起寫進隊名，例如：
+    // 「B1 臺中市西屯國小」或「(28)勝臺中市西屯國小」。
+    // 對應晉級路線時必須先取出真正隊名，否則 sourceSides 會是 null，
+    // 動畫就只走到上一輪，冠軍戰/季軍戰不會接上。
+    const groupPrefix = /^[A-G][1-4]\s+(.+)$/i.exec(text);
+    if (groupPrefix) return groupPrefix[1].trim();
+    const outcomePrefix = /^(?:[（(]\s*\d+\s*[）)]\s*(?:勝|敗)|(?:勝|敗)\s*[（(]?\s*\d+\s*[）)]?|\d+\s*(?:勝|敗))\s*(.+)$/u.exec(text);
+    if (outcomePrefix) return outcomePrefix[1].trim();
+    return text;
   }
 
   function displayParticipantName(name) {
@@ -559,9 +573,8 @@
       const sourceSides = match.info && sheetSideMapping(draw, match, names, match.info.teams, matches);
       if (sourceSides) {
         sourceSides.forEach((sheetSide, side) => {
-          const actual = match.info.teams[sheetSide];
-          const placeholder = /^(?:[A-G][1-4]|(?:勝|敗)\s*\d+|\(\d+\)(?:勝|敗))$/i.test(normalizedSeed(actual));
-          if (!placeholder) names[side] = actual;
+          const actual = usableName(match.info.teams[sheetSide]);
+          if (actual) names[side] = actual;
         });
       }
       const result = match.info && match.info.result;
@@ -627,7 +640,7 @@
       node.children.forEach(positionNode);
       node.x = (node.children[0].x + node.children[1].x) / 2;
       node.y = top + (stages.length - 1 - node.roundIndex) * step;
-      positions.set(node.number, { x: node.x, y: node.y });
+      positions.set(node.number, { number: node.number, x: node.x, y: node.y });
       return node;
     }
     if (root) positionNode(root);
@@ -698,14 +711,16 @@
     function advance(node) {
       if (node.type === "seed") return seedPath(node);
       const contenders = node.children.map(advance);
-      const match = resolved.get(node.number);
-      if (!match?.result || !match.sourceSides || match.winnerSide == null ||
-        contenders.some((contender) => !contender)) return null;
-
+      if (contenders.some((contender) => !contender)) return null;
       const arrivals = contenders.map((contender) => addSegment(contender, node.x, node.y));
       const encounter = Math.max(...arrivals);
-      meetings.set(node.number, encounter);
       contenders.forEach((contender) => { contender.time = encounter; });
+
+      const match = resolved.get(node.number);
+      // 只要兩邊都已經晉級，就先把光線接到這一場的交會點。
+      // 當前場次尚未完賽時停在交會點；有正式勝負後才公布比分並繼續往上一輪。
+      if (!match?.result || !match.sourceSides || match.winnerSide == null) return null;
+      meetings.set(node.number, encounter);
 
       const loser = contenders[1 - match.winnerSide];
       loser.fadeAt = encounter;
@@ -1012,9 +1027,11 @@
       const [first, second] = layout.semifinalPositions;
       const middleX = (first.x + second.x) / 2;
       // PDF 以虛線接續兩場準決賽敗隊，作為季軍戰獨立的分支。
-      path("M " + first.x + " " + first.y + " V " + layout.bronzeY
+      const bronzeRoute = path("M " + first.x + " " + first.y + " V " + layout.bronzeY
         + " H " + second.x + " V " + second.y,
         "draw-route is-bronze", first.number, layout.bronze.number);
+      // 季軍戰虛線放在最底層，避免後加入的 SVG path 蓋住兩條準決賽→冠軍戰主線。
+      svg.prepend(bronzeRoute);
       const bronzeMatch = resolved.get(layout.bronze.number);
       const third = element("div", "draw-tree-node draw-tree-third");
       third.style.left = middleX + "px";
