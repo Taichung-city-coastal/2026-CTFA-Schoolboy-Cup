@@ -258,33 +258,40 @@
     return section;
   }
 
-  // 容許全形數字、全形冒號、空白與 PK 的常見寫法。
-  // 沒有 PK 的平手及比分不完整時，不推定勝負。
+  // 容許全形數字、全形冒號、空白，以及 OT/PK 的常見寫法。
+  // 加時賽以 OT 內的比分判定勝負；若仍平手，有 PK 才能決定晉級。
   function parseResult(input) {
     const cleaned = String(input == null ? "" : input).normalize("NFKC")
       .replace(/[：﹕∶]/g, ":")
       .replace(/[－—–-]/g, ":")
       .replace(/（/g, "(").replace(/）/g, ")")
       .replace(/點球大戰|點球|十二碼|点球/g, "PK")
+      .replace(/加時賽|延長賽/g, "OT")
       .toUpperCase().replace(/P\s*\.?\s*K\.?/g, "PK")
       .replace(/\s+/g, "");
     const compact = cleaned.replace(/[()[\]{}，,、;；/／｜|—–\-=＝]/g, "");
-    const scores = compact.match(/^(\d+):(\d+)(?:PK(?:比分)?[:：]?(\d+):(\d+))?$/);
-    if (!scores) return null;
-    const home = Number(scores[1]);
-    const away = Number(scores[2]);
-    const hasPk = scores[3] != null;
-    const pkHome = hasPk ? Number(scores[3]) : null;
-    const pkAway = hasPk ? Number(scores[4]) : null;
-    if (![home, away, pkHome, pkAway].filter((n) => n != null).every(Number.isSafeInteger)) return null;
-    // 有 PK 時，正規比分應為平手，PK 也不可平手。
+    const scores = compact.match(/^(?:(\d+):(\d+))?(?:OT(?:比分)?(\d+):(\d+))?(?:PK(?:比分)?(\d+):(\d+))?$/);
+    if (!scores || (scores[1] == null && scores[3] == null)) return null;
+    const hasRegular = scores[1] != null;
+    const hasOt = scores[3] != null;
+    const hasPk = scores[5] != null;
+    const overtime = hasOt ? [Number(scores[3]), Number(scores[4])] : null;
+    const goals = hasRegular ? [Number(scores[1]), Number(scores[2])] : overtime;
+    const penalties = hasPk ? [Number(scores[5]), Number(scores[6])] : null;
+    if (![...goals, ...(overtime || []), ...(penalties || [])].every(Number.isSafeInteger)) return null;
+    const decisive = overtime || goals;
+    // PK 只能解決加時賽（或正規時間）仍平手的比賽，PK 分數本身不能相同。
     const winnerSide = hasPk
-      ? (home === away && pkHome !== pkAway ? (pkHome > pkAway ? 0 : 1) : null)
-      : (home === away ? null : (home > away ? 0 : 1));
+      ? (decisive[0] === decisive[1] && penalties[0] !== penalties[1]
+        ? (penalties[0] > penalties[1] ? 0 : 1) : null)
+      : (decisive[0] === decisive[1] ? null : (decisive[0] > decisive[1] ? 0 : 1));
     return {
-      label: home + ":" + away + (hasPk ? " PK " + pkHome + ":" + pkAway : ""),
-      goals: [home, away],
-      penalties: hasPk ? [pkHome, pkAway] : null,
+      label: goals.join(":") + (hasOt ? " 加時賽" + (hasRegular ? " " + overtime.join(":") : "") : "")
+        + (hasPk ? " PK " + penalties.join(":") : ""),
+      goals,
+      overtime,
+      overtimeOnly: hasOt && !hasRegular,
+      penalties,
       winnerSide,
       isFinal: winnerSide !== null
     };
@@ -947,12 +954,17 @@
       const block = element("div", "draw-tree-match-score");
       block.append(element("strong", "draw-tree-match-goals",
         match.result.goals[left] + " : " + match.result.goals[right]));
+      if (match.result.overtime) {
+        block.append(element("small", "draw-tree-match-overtime",
+          "加時賽" + (match.result.overtimeOnly ? "" : " " +
+            match.result.overtime[left] + " : " + match.result.overtime[right])));
+      }
       if (match.result.penalties) {
         block.append(element("small", "draw-tree-match-pk",
           "PK " + match.result.penalties[left] + " : " + match.result.penalties[right]));
       }
-      block.setAttribute("aria-label", match.names[0] + " " + match.result.goals[left] + " 比 " +
-        match.result.goals[right] + " " + match.names[1]);
+      block.setAttribute("aria-label", match.names[0] + " 對 " + match.names[1]
+        + "，" + match.result.label);
       const matchNumber = Number(marker.dataset.matchNumber);
       if (race.meetings.has(matchNumber)) {
         block.classList.add("is-score-pending");

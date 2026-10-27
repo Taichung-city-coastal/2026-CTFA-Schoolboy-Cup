@@ -1110,7 +1110,7 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .score-core.is-bye strong:first-child { color: var(--event-yellow); text-align: center; font-size: 17px; }
 .score-value { min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 3px; text-align: center; }
 .score-core .score-value b { color: var(--event-yellow); font-family:"Outfit",sans-serif; font-size: 23px; line-height: 1.15; }
-.score-pk { color: rgba(255,255,255,.9); font-family:"Outfit",sans-serif; font-size: 12px; font-weight: 800; line-height: 1.2; white-space: nowrap; }
+.score-pk, .score-overtime { color: rgba(255,255,255,.9); font-family:"Outfit","Noto Sans TC",sans-serif; font-size: 12px; font-weight: 800; line-height: 1.2; white-space: nowrap; }
 .score-empty {
   padding: 60px 20px;
   color: rgba(255,255,255,.56);
@@ -1480,7 +1480,7 @@ button, a { -webkit-tap-highlight-color: transparent; }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 .draw-tree-match-goals { color: #fff; font: 900 19px "Outfit",sans-serif; white-space: nowrap; }
-.draw-tree-match-pk { color: var(--event-yellow); font: 800 11px "Outfit",sans-serif; white-space: nowrap; }
+.draw-tree-match-pk, .draw-tree-match-overtime { color: var(--event-yellow); font: 800 11px "Outfit","Noto Sans TC",sans-serif; white-space: nowrap; }
 .draw-tree-final-title, .draw-tree-third-title { color: var(--event-yellow); font-size: 16px; font-weight: 900; }
 .draw-tree-third-title { color: rgba(255,255,255,.86); }
 .draw-tree-result, .draw-tree-result-pk { color: #cce0ff; font: 800 11px "Outfit",sans-serif; }
@@ -1749,7 +1749,7 @@ button, a { -webkit-tap-highlight-color: transparent; }
   .score-core { grid-template-columns: minmax(0,1fr) 58px minmax(0,1fr); gap: 5px; }
   .score-core strong { font-size: 12px; line-height: 1.35; word-break: break-word; }
   .score-core .score-value b { font-size: 19px; }
-  .score-pk { font-size: 10px; }
+  .score-pk, .score-overtime { font-size: 10px; }
   .score-draws { gap: 10px; }
   .draw-group-card { padding: 13px 10px 8px; }
   .draw-group-figure { height: 272px; }

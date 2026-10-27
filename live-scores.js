@@ -29,6 +29,7 @@
     return score
       ? score.replace(/[：﹕∶]/g, ":")
         .replace(/點球大戰|點球|十二碼|点球/g, "PK")
+        .replace(/加時賽|延長賽/g, "OT")
         .replace(/p\s*\.?\s*k\.?/gi, "PK")
         .replace(/\s+/g, "")
         .replace(/[－—–-]/g, ":")
@@ -37,11 +38,20 @@
 
   function splitScoreForDisplay(value) {
     const score = normalizeScore(value);
+    // 試算表可填「1:1 OT(2:1)」、單獨「OT(2:1)」，也可接續 PK。
+    const extra = score.match(/^(?:(\d+:\d+))?(?:OT(?:比分)?\(?(\d+:\d+)\)?)?(?:PK(?:比分)?\(?(\d+:\d+)\)?)?$/i);
+    if (extra && (extra[1] || extra[2])) {
+      return {
+        main: extra[1] || extra[2],
+        overtime: extra[2] ? "加時賽" + (extra[1] ? " " + extra[2] : "") : "",
+        pk: extra[3] ? "PK " + extra[3] : ""
+      };
+    }
     const pkIndex = score.indexOf("PK");
-    if (pkIndex < 0) return { main: score, pk: "" };
+    if (pkIndex < 0) return { main: score, overtime: "", pk: "" };
     const main = score.slice(0, pkIndex).replace(/[\s:：(（)）]+$/g, "") || "VS";
     const pkScore = score.slice(pkIndex + 2).replace(/^[\s:：(（)）]+|[\s)）]+$/g, "");
-    return { main, pk: "PK" + (pkScore ? " " + pkScore : "") };
+    return { main, overtime: "", pk: "PK" + (pkScore ? " " + pkScore : "") };
   }
 
   function normalizeTime(value) {
@@ -379,6 +389,12 @@
         const primaryScore = document.createElement("b");
         primaryScore.textContent = scoreParts.main;
         if (!isBye) score.append(primaryScore);
+        if (!isBye && scoreParts.overtime) {
+          const overtimeScore = document.createElement("span");
+          overtimeScore.className = "score-overtime";
+          overtimeScore.textContent = scoreParts.overtime;
+          score.append(overtimeScore);
+        }
         if (!isBye && scoreParts.pk) {
           const pkScore = document.createElement("span");
           pkScore.className = "score-pk";
