@@ -224,6 +224,36 @@ button, a { -webkit-tap-highlight-color: transparent; }
   margin-top: -18px;
   padding: 0 24px 86px;
 }
+
+/* 首頁賽事最終排名 */
+.final-results-section { position: relative; z-index: 4; padding: 0 24px 86px; }
+.final-results-panel { width: min(1080px, 100%); margin: 0 auto; padding: clamp(22px, 4vw, 42px); border: 1px solid rgba(255,255,255,.16); border-radius: 26px; background: linear-gradient(145deg, rgba(32,98,190,.97), rgba(10,43,94,.98)); box-shadow: 0 30px 70px rgba(0,10,40,.38); }
+.final-results-heading { margin-bottom: 35px; text-align: center; }
+.final-results-eyebrow { color: var(--event-yellow); font: 800 12px "Outfit", sans-serif; letter-spacing: .19em; }
+.final-results-heading h1 { margin: 10px 0; font-size: clamp(1.45rem, 3vw, 2.25rem); line-height: 1.45; font-weight: 900; }
+.final-results-heading h1 span { display: block; color: var(--event-yellow); }
+.final-results-heading p { margin: 0; color: rgba(255,255,255,.75); font-size: 13px; }
+.final-results-category + .final-results-category { margin-top: 38px; }
+.final-results-category h2 { display: flex; align-items: center; gap: 12px; margin: 0 0 18px; font-size: clamp(1.1rem, 2.3vw, 1.5rem); line-height: 1.4; }
+.final-results-category h2 span { color: var(--event-yellow); font: 800 15px "Outfit", sans-serif; }
+.final-results-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.final-result-card { min-width: 0; overflow: hidden; border: 1px solid rgba(255,255,255,.16); border-radius: 18px; background: rgba(4,24,57,.55); }
+.final-result-card h3 { margin: 0; padding: 15px 19px; border-bottom: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.065); font-size: 16px; }
+.final-result-card ol { margin: 0; padding: 9px 17px 13px; list-style: none; }
+.final-result-card li { display: grid; grid-template-columns: 94px minmax(0, 1fr); gap: 8px; padding: 10px 0; align-items: start; line-height: 1.5; }
+.final-result-card li + li { border-top: 1px solid rgba(255,255,255,.085); }
+.final-result-card li span { color: #e5edff; font-size: 13px; white-space: nowrap; }
+.final-result-card li strong { font-size: 14px; font-weight: 800; overflow-wrap: anywhere; }
+.final-result-card li:first-child strong { color: var(--event-yellow); }
+@media (max-width: 700px) {
+  .final-results-section { padding: 0 16px 64px; }
+  .final-results-panel { padding: 22px 16px; border-radius: 20px; }
+  .final-results-grid { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .final-results-category + .final-results-category { margin-top: 32px; }
+  .final-result-card h3 { padding: 13px 15px; }
+  .final-result-card ol { padding: 7px 14px 10px; }
+  .final-result-card li { grid-template-columns: 92px minmax(0, 1fr); }
+}
 .countdown-panel {
   width: min(1000px, 100%);
   margin: 0 auto;
