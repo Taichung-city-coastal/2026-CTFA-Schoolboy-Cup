@@ -1424,29 +1424,27 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .draw-tree-lines { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .draw-route {
   fill: none;
-  stroke: rgba(140,206,255,.8);
+  /* 尚未被晉級動畫畫過的路線維持白色，光線走過後才顯示黃綠色。 */
+  stroke: #fff;
   stroke-width: 3.5;
   stroke-linecap: square;
   stroke-linejoin: miter;
   transition: stroke .3s ease, stroke-width .3s ease, filter .3s ease;
 }
-.draw-route.is-winner {
-  stroke: #f0f950;
-  stroke-width: 6;
-  filter: drop-shadow(0 0 5px rgba(240,249,80,.9));
+.draw-route.is-bronze {
+  stroke: #67caff;
+  stroke-width: 4;
+  stroke-dasharray: 13 10;
+  filter: drop-shadow(0 0 4px rgba(103,202,255,.45));
 }
-/* 光線必須從點開淘汰賽圖後才走過路徑，底圖不能預先亮黃。 */
-.draw-tree-lines.has-light-races .draw-route.is-winner {
-  stroke: rgba(140,206,255,.45);
-  stroke-width: 3.5;
-  filter: none;
+/* 動畫完成準決賽前，季軍賽線與標題不會提前浮出。 */
+.draw-tree-canvas.has-staged-bronze:not(.is-bronze-unlocked) .draw-route.is-bronze {
+  opacity: 0;
 }
-.draw-route.is-loser { stroke: rgba(104,125,156,.34); stroke-width: 2.6; filter: none; }
-.draw-tree-lines.has-light-races .draw-route.is-loser:not(.is-collided) {
-  stroke: rgba(140,206,255,.45);
-  stroke-width: 3.5;
+.draw-tree-canvas.has-staged-bronze:not(.is-bronze-unlocked) .draw-tree-third {
+  opacity: 0;
+  visibility: hidden;
 }
-.draw-route.is-bronze { stroke: rgba(183,198,223,.7); stroke-width: 3; stroke-dasharray: 13 10; }
 .draw-route-lights { pointer-events: none; }
 .draw-route-light {
   fill: none;
@@ -1457,13 +1455,13 @@ button, a { -webkit-tap-highlight-color: transparent; }
   opacity: 0;
   filter: drop-shadow(0 0 4px #f0f950) drop-shadow(0 0 10px rgba(240,249,80,.55));
 }
-.draw-route-light.is-bronze-light { stroke: #9ce7ff; filter: drop-shadow(0 0 7px rgba(156,231,255,.8)); }
+.draw-route-light.is-bronze-light { stroke: #67caff; filter: drop-shadow(0 0 7px rgba(103,202,255,.8)); }
 .draw-route-spark {
   fill: #fffed0;
   opacity: 0;
   filter: drop-shadow(0 0 5px #f0f950) drop-shadow(0 0 9px #f0f950);
 }
-.draw-route-spark.is-bronze-light { fill: #c4f5ff; filter: drop-shadow(0 0 7px #9ce7ff); }
+.draw-route-spark.is-bronze-light { fill: #c4f5ff; filter: drop-shadow(0 0 7px #67caff); }
 .draw-tree-stage-label {
   position: absolute;
   left: 15px;
@@ -1512,7 +1510,7 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .draw-tree-match-goals { color: #fff; font: 900 19px "Outfit",sans-serif; white-space: nowrap; }
 .draw-tree-match-pk, .draw-tree-match-overtime { color: var(--event-yellow); font: 800 11px "Outfit","Noto Sans TC",sans-serif; white-space: nowrap; }
 .draw-tree-final-title, .draw-tree-third-title { color: var(--event-yellow); font-size: 16px; font-weight: 900; }
-.draw-tree-third-title { color: rgba(255,255,255,.86); }
+.draw-tree-third-title { color: #67caff; }
 .draw-tree-result, .draw-tree-result-pk { color: #cce0ff; font: 800 11px "Outfit",sans-serif; }
 .draw-tree-result-pk { color: var(--event-yellow); }
 .draw-tree-third { z-index: 2; }
@@ -1533,15 +1531,6 @@ button, a { -webkit-tap-highlight-color: transparent; }
   font-weight: 600;
   line-height: 1.45;
   overflow-wrap: anywhere;
-}
-.draw-tree-seed.is-advancing .draw-tree-seed-code { color: #f0f950; }
-.draw-tree-seed.is-eliminated { color: #8395b1; opacity: .34; }
-.draw-tree-canvas:has(.draw-tree-lines.has-light-races) .draw-tree-seed.is-eliminated:not(.is-collided) {
-  color: #fff;
-  opacity: 1;
-}
-.draw-tree-canvas:has(.draw-tree-lines.has-light-races) .draw-tree-seed.is-advancing:not(.is-finished) .draw-tree-seed-code {
-  color: #fff;
 }
 .draw-tree-seed { transition: opacity .42s ease, color .42s ease; }
 
@@ -1792,11 +1781,6 @@ button, a { -webkit-tap-highlight-color: transparent; }
 
 @media (prefers-reduced-motion: reduce) {
   .draw-route-lights { display: none !important; }
-  .draw-tree-lines.has-light-races .draw-route.is-winner {
-    stroke: #f0f950;
-    stroke-width: 6;
-    filter: drop-shadow(0 0 5px rgba(240,249,80,.9));
-  }
   html { scroll-behavior: auto; }
   *, *::before, *::after {
     animation-duration: .01ms !important;

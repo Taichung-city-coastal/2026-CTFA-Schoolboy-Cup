@@ -331,7 +331,8 @@
     // 「B1 臺中市西屯國小」或「(28)勝臺中市西屯國小」。
     // 對應晉級路線時必須先取出真正隊名，否則 sourceSides 會是 null，
     // 動畫就只走到上一輪，冠軍戰/季軍戰不會接上。
-    const groupPrefix = /^[A-G][1-4]\s+(.+)$/i.exec(text);
+    // 有些工作表直接連寫「A1台中磐石」，籤位與隊名之間完全沒有空格。
+    const groupPrefix = /^[A-G][1-4]\s*(.+)$/i.exec(text);
     if (groupPrefix) return groupPrefix[1].trim();
     const outcomePrefix = /^(?:[（(]\s*\d+\s*[）)]\s*(?:勝|敗)|(?:勝|敗)\s*[（(]?\s*\d+\s*[）)]?|\d+\s*(?:勝|敗))\s*(.+)$/u.exec(text);
     if (outcomePrefix) return outcomePrefix[1].trim();
@@ -532,7 +533,13 @@
       const exactSeed = normalizedSeed(enteredName) === normalizedSeed(seed);
       const seedCode = /^(?:[A-G][1-4]|(?:勝|敗)\d+|\d+(?:勝|敗))$/.test(normalizedSeed(enteredName));
       if (seedCode) return exactSeed ? 10 : -100;
-      if (teamKey(enteredName) === teamKey(names[side])) return 10;
+      const enteredKey = teamKey(enteredName);
+      const expectedKey = teamKey(names[side]);
+      if (enteredKey === expectedKey) return 10;
+      // 準決賽可能只寫「閃電豹」「夢幻」，冠軍戰才使用完整隊名。
+      // 只用於兩側比對的評分，若兩邊都符合仍保留歧義，不硬判勝隊。
+      if (enteredKey.length >= 2 && expectedKey.length >= 2 &&
+          (enteredKey.includes(expectedKey) || expectedKey.includes(enteredKey))) return 8;
       const possible = groupCandidates(draw, seed, matchDefinitions);
       if (groups[sheetSide].size && possible.size) {
         const overlap = [...groups[sheetSide]].some((group) => possible.has(group));
@@ -678,12 +685,22 @@
     return "pending";
   }
 
+  // 只有兩場準決賽結束、季軍賽對戰隊伍都確定時，才顯示藍色季軍賽分支。
+  function semifinalsAreComplete(draw, resolved) {
+    const semifinals = draw.rounds[draw.rounds.length - 2]?.matches || [];
+    return semifinals.length === 2 && semifinals.every(([number]) => {
+      const match = resolved.get(number);
+      return !!match?.sourceSides && match.winnerSide != null;
+    });
+  }
+
   // 每束光從底部出發；兩隊抵達同一場次的交會點才公布比分並分出勝負。
   // 若兩支路線長度不同，先到者等待，勝者在雙方碰面後才往下一輪。
   function bottomUpLightRace(layout, resolved, speed = 170) {
     const paths = [];
     const meetings = new Map();
     const semifinalLosers = new Map();
+    let bronzeRevealAt = null;
     const finalRound = layout.root?.roundIndex || 0;
 
     function seedPath(seed) {
@@ -696,11 +713,16 @@
       return path;
     }
 
-    function addSegment(path, x, y) {
+    function addSegment(path, x, y, stage) {
+      const fromX = path.x;
+      const fromY = path.y;
       const distance = Math.abs(path.y - y) + Math.abs(path.x - x);
       const start = path.time;
       const end = start + distance / speed * 1000;
-      path.segments.push({ start, end, from: path.length, to: path.length + distance });
+      path.segments.push({
+        start, end, from: path.length, to: path.length + distance,
+        fromX, fromY, toX: x, toY: y, stage
+      });
       path.d += " V " + y + " H " + x;
       path.length += distance;
       path.x = x;
@@ -712,7 +734,8 @@
       if (node.type === "seed") return seedPath(node);
       const contenders = node.children.map(advance);
       if (contenders.some((contender) => !contender)) return null;
-      const arrivals = contenders.map((contender) => addSegment(contender, node.x, node.y));
+      const arrivals = contenders.map((contender) =>
+        addSegment(contender, node.x, node.y, node.roundIndex));
       const encounter = Math.max(...arrivals);
       contenders.forEach((contender) => { contender.time = encounter; });
 
@@ -724,15 +747,18 @@
 
       const loser = contenders[1 - match.winnerSide];
       loser.fadeAt = encounter;
-      if (node.roundIndex === finalRound - 1) semifinalLosers.set(node.number, loser);
+      if (node.roundIndex === finalRound - 1) {
+        semifinalLosers.set(node.number, {
+          leaf: loser.leaf, x: node.x, y: node.y, time: encounter
+        });
+      }
       return contenders[match.winnerSide];
     }
 
     if (layout.root) advance(layout.root);
 
     const bronze = layout.bronze && resolved.get(layout.bronze.number);
-    if (bronze?.result && bronze.sourceSides && bronze.winnerSide != null &&
-      layout.semifinalPositions.length === 2) {
+    if (layout.bronze && layout.semifinalPositions.length === 2) {
       const contenders = bronze.seeds.map((seed) => {
         const ref = seedReference(seed);
         return ref?.outcome === "敗" ? semifinalLosers.get(ref.match) : null;
@@ -740,19 +766,37 @@
       if (contenders.every(Boolean)) {
         const middleX = (layout.semifinalPositions[0].x +
           layout.semifinalPositions[1].x) / 2;
-        const arrivals = contenders.map((contender) => {
-          contender.fadeAt = null;
-          contender.isBronze = true;
-          return addSegment(contender, middleX, layout.bronzeY);
+        // 兩場準決賽的動畫都跑完才同時啟動季軍賽兩條藍線。
+        bronzeRevealAt = Math.max(...contenders.map((contender) => contender.time));
+        const bronzePaths = contenders.map((contender, side) => {
+          // 季軍賽是準決賽敗隊的獨立藍色支線，不能把先前黃綠色主線染成藍色。
+          const offsetX = contender.x + (side === 0 ? 26 : -26);
+          const length = Math.abs(contender.x - offsetX) +
+            Math.abs(contender.y - layout.bronzeY) + Math.abs(offsetX - middleX);
+          const path = {
+            leaf: contender.leaf,
+            d: "M " + contender.x + " " + contender.y +
+              " H " + offsetX + " V " + layout.bronzeY + " H " + middleX,
+            length, x: middleX, y: layout.bronzeY, time: bronzeRevealAt + length / speed * 1000,
+            segments: [{
+              start: bronzeRevealAt, end: bronzeRevealAt + length / speed * 1000,
+              from: 0, to: length, stage: "bronze"
+            }],
+            fadeAt: null, isBronze: true
+          };
+          paths.push(path);
+          return path;
         });
-        const encounter = Math.max(...arrivals);
-        meetings.set(layout.bronze.number, encounter);
-        contenders[1 - bronze.winnerSide].fadeAt = encounter;
-        contenders.forEach((contender) => { contender.time = encounter; });
+        if (bronze?.result && bronze.sourceSides && bronze.winnerSide != null) {
+          const encounter = Math.max(...bronzePaths.map((path) => path.time));
+          meetings.set(layout.bronze.number, encounter);
+          bronzePaths[1 - bronze.winnerSide].fadeAt = encounter;
+          bronzePaths.forEach((path) => { path.time = encounter; });
+        }
       }
     }
 
-    return { paths: paths.filter((path) => path.length > 0), meetings };
+    return { paths: paths.filter((path) => path.length > 0), meetings, bronzeRevealAt };
   }
 
   function setupBracketZoom(scroll, canvas, viewport, layout, controls, previous) {
@@ -910,6 +954,7 @@
     slot.__cleanupBracketZoom?.();
     const layout = bracketLayout(draw);
     const resolved = resolveBracket(draw, rows, key);
+    const semifinalsComplete = semifinalsAreComplete(draw, resolved);
     const scroll = element("div", "draw-tree-scroll");
     scroll.setAttribute("role", "region");
     scroll.setAttribute("aria-label", draw.label + " 淘汰賽晉級圖，可水平捲動");
@@ -994,10 +1039,9 @@
       node.children.forEach((child, side) => {
         drawRound(child);
         const sourceY = child.y;
-        const status = progressionStatus(draw, resolved, node.number, side, node.seeds[side]);
         const route = "M " + child.x + " " + sourceY + " V " + node.y + " H " + node.x;
         const line = path(route,
-          "draw-route" + (status === "advancing" ? " is-winner" : status === "eliminated" ? " is-loser" : ""),
+          "draw-route",
           child.type === "match" ? child.number : node.seeds[side],
           node.number);
         if (!routeLines.has(node.number)) routeLines.set(node.number, []);
@@ -1023,21 +1067,23 @@
 
     drawRound(layout.root);
 
-    if (layout.bronze && layout.semifinalPositions.length === 2) {
+    if (semifinalsComplete && layout.bronze && layout.semifinalPositions.length === 2) {
       const [first, second] = layout.semifinalPositions;
       const middleX = (first.x + second.x) / 2;
-      // PDF 以虛線接續兩場準決賽敗隊，作為季軍戰獨立的分支。
-      const bronzeRoute = path("M " + first.x + " " + first.y + " V " + layout.bronzeY
-        + " H " + second.x + " V " + second.y,
-        "draw-route is-bronze", first.number, layout.bronze.number);
-      // 季軍戰虛線放在最底層，避免後加入的 SVG path 蓋住兩條準決賽→冠軍戰主線。
-      svg.prepend(bronzeRoute);
+      // 準決賽全部結束才從兩場敗隊分出藍色季軍賽線，並和冠軍主線錯開。
+      [first, second].forEach((semi, side) => {
+        const offsetX = semi.x + (side === 0 ? 26 : -26);
+        const bronzeRoute = path("M " + semi.x + " " + semi.y +
+          " H " + offsetX + " V " + layout.bronzeY + " H " + middleX,
+          "draw-route is-bronze", semi.number, layout.bronze.number);
+        svg.prepend(bronzeRoute);
+      });
       const bronzeMatch = resolved.get(layout.bronze.number);
       const third = element("div", "draw-tree-node draw-tree-third");
       third.style.left = middleX + "px";
       third.style.top = (layout.bronzeY + 7) + "px";
       third.dataset.matchNumber = String(layout.bronze.number);
-      third.append(element("span", "draw-tree-third-title", "季軍戰"));
+      third.append(element("span", "draw-tree-third-title", "季軍賽"));
       third.append(element("strong", "draw-tree-game-no", "(" + chineseMatchNo(layout.bronze.number) + ")"));
       appendMatchScore(third, bronzeMatch);
       canvas.append(third);
@@ -1058,9 +1104,6 @@
       seed.append(element("strong", "draw-tree-seed-code", displayParticipantName(leaf.label)));
       const rankName = resolved.get(leaf.number)?.names[leaf.side] || leaf.label;
       if (rankName !== leaf.label) seed.append(element("small", "draw-tree-seed-team", displayParticipantName(rankName)));
-      const state = progressionStatus(draw, resolved, leaf.number, leaf.side, leaf.label);
-      if (state === "eliminated") seed.classList.add("is-eliminated");
-      if (state === "advancing") seed.classList.add("is-advancing");
       seedNodes.set(leaf, seed);
       canvas.append(seed);
     });
@@ -1070,6 +1113,7 @@
     svg.append(lightLayer);
     // 原始勝隊線不能在開啟動畫前直接發亮；由光線沿路線逐段點亮。
     if (animatedPaths) svg.classList.add("has-light-races");
+    if (race.bronzeRevealAt != null && animatedPaths) canvas.classList.add("has-staged-bronze");
     canvas.prepend(svg);
     const viewport = element("div", "draw-tree-viewport");
     viewport.append(canvas);
@@ -1118,6 +1162,7 @@
         if (frameId !== null) window.clearTimeout(frameId);
         frameId = null;
         startTime = null;
+        canvas.classList.remove("is-bronze-unlocked");
         movingLights.forEach(({ trace, spark, length }) => {
           trace.style.strokeDashoffset = String(length);
           trace.style.opacity = "0";
@@ -1135,6 +1180,9 @@
       function tick(now) {
         if (startTime === null) startTime = now;
         const elapsed = now - startTime - raceStartDelay;
+        if (race.bronzeRevealAt != null && elapsed >= race.bronzeRevealAt) {
+          canvas.classList.add("is-bronze-unlocked");
+        }
         movingLights.forEach(({ trace, spark, length, segments, fadeAt, endTime, seed }) => {
           let distance = 0;
           for (const segment of segments) {
@@ -1173,6 +1221,7 @@
         reset();
         if (fold && !fold.open) return;
         if (reduceMotion.matches) {
+          canvas.classList.add("is-bronze-unlocked");
           race.meetings.forEach((_, number) => revealScore(number));
           movingLights.forEach(({ seed, fadeAt }) =>
             seed?.classList.add(fadeAt === null ? "is-finished" : "is-collided"));
